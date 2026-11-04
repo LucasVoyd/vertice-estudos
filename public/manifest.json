@@ -1,0 +1,17 @@
+{
+  "name": "Vértice — Gestão & Ciclo de Estudos",
+  "short_name": "Vértice",
+  "description": "Planejamento, Edital Verticalizado, Ciclo de Estudos e Questões",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1e2235",
+  "theme_color": "#1e2235",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

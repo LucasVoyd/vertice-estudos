@@ -1,0 +1,471 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Home,
+  FileText,
+  PlusCircle,
+  Calendar,
+  Menu,
+  BookOpen,
+  Bell,
+  Plus
+} from 'lucide-react';
+import { loadAppState, saveAppState } from './utils/appStore';
+import { linesToTopicsTree, generateStudyCycle } from './utils/editalParser';
+import HomeDashboardTab from './components/HomeDashboardTab';
+import EditalVerticalTab from './components/EditalVerticalTab';
+import StudyRegisterTab from './components/StudyRegisterTab';
+import CycleTab from './components/CycleTab';
+import MoreHubTab from './components/MoreHubTab';
+import { NewPlanWizardModal } from './components/EditalWizardModal';
+
+export default function App() {
+  const [state, setState] = useState(() => loadAppState());
+  const [activeTab, setActiveTab] = useState('inicio'); // 'inicio' | 'edital' | 'estudo' | 'planejamento' | 'mais'
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [preselectedStudy, setPreselectedStudy] = useState(null);
+
+  useEffect(() => {
+    saveAppState(state);
+  }, [state]);
+
+  const currentPlan =
+    (state.plans || []).find(p => p.id === state.selectedPlanId) ||
+    state.plans?.[0] ||
+    null;
+
+  const updateCurrentPlan = updater => {
+    setState(prev => {
+      const plans = (prev.plans || []).map(p =>
+        p.id === currentPlan.id ? updater(p) : p
+      );
+      return { ...prev, plans };
+    });
+  };
+
+  // Cascata Pai-Filho ao concluir/desmarcar um tópico no Edital Verticalizado (fiel a FinishTopic _cascadeLocal)
+  const handleToggleTopicCascade = (subjectId, topicId, nextFinished) => {
+    updateCurrentPlan(plan => {
+      const subjects = (plan.subjects || []).map(subj => {
+        if (subj.id !== subjectId) return subj;
+        const topics = [...(subj.topics || [])];
+
+        // Descobre todos os descendentes recursivamente
+        const getDescendantIds = parentId => {
+          const children = topics.filter(t => t.parentId === parentId);
+          return children.reduce(
+            (acc, c) => [...acc, c.id, ...getDescendantIds(c.id)],
+            []
+          );
+        };
+
+        const idsToToggle = new Set([topicId, ...getDescendantIds(topicId)]);
+        const nowIso = nextFinished ? new Date().toISOString() : null;
+
+        const updatedTopics = topics.map(t =>
+          idsToToggle.has(t.id)
+            ? { ...t, finished: nextFinished, finishedAt: nowIso }
+            : t
+        );
+
+        return { ...subj, topics: updatedTopics };
+      });
+
+      return { ...plan, subjects };
+    });
+  };
+
+  // Colar tópicos do edital dentro de uma disciplina existente
+  const handlePasteTopicsIntoSubject = (subjectId, approvedLines) => {
+    updateCurrentPlan(plan => {
+      const subjects = (plan.subjects || []).map(subj => {
+        if (subj.id !== subjectId) return subj;
+        const rootCount = (subj.topics || []).filter(t => t.depth === 0).length;
+        const newTopics = linesToTopicsTree(approvedLines, rootCount);
+        return {
+          ...subj,
+          topics: [...(subj.topics || []), ...newTopics]
+        };
+      });
+      return { ...plan, subjects };
+    });
+  };
+
+  // Salvar sessão de estudo (Cronômetro ou Manual) + Atualizar Ciclo, Tópico e Agendar Revisões (1, 7, 15, 30 dias)
+  const handleSaveStudySession = session => {
+    setState(prev => {
+      const logId = `log_${Date.now()}`;
+      const newLog = {
+        id: logId,
+        planId: currentPlan.id,
+        profile: prev.activeProfile,
+        ...session
+      };
+
+      // Atualiza plano (tópico + bloco do ciclo)
+      const updatedPlans = (prev.plans || []).map(plan => {
+        if (plan.id !== currentPlan.id) return plan;
+
+        const subjects = (plan.subjects || []).map(subj => {
+          if (subj.id !== session.subjectId) return subj;
+          const topics = (subj.topics || []).map(top => {
+            if (top.id !== session.topicId) return top;
+            return {
+              ...top,
+              questionsHit: (top.questionsHit || 0) + (session.questionsHit || 0),
+              questionsMiss: (top.questionsMiss || 0) + (session.questionsMiss || 0),
+              studiedMinutes: (top.studiedMinutes || 0) + (session.durationMinutes || 0),
+              lastStudiedAt: session.date
+            };
+          });
+          return { ...subj, topics };
+        });
+
+        let cycle = [...(plan.cycle || [])];
+        let cyclesCompleted = plan.cyclesCompleted || 0;
+
+        if (session.addToPlanning && cycle.length > 0) {
+          let targetIdx = cycle.findIndex(c => c.id === session.cycleItemId);
+          if (targetIdx < 0) {
+            targetIdx = cycle.findIndex(
+              c =>
+                c.subjectId === session.subjectId &&
+                (c.durationStudied || 0) < (c.duration || 30)
+            );
+          }
+          if (targetIdx < 0) {
+            targetIdx = cycle.findIndex(c => c.subjectId === session.subjectId);
+          }
+          if (targetIdx >= 0) {
+            cycle[targetIdx] = {
+              ...cycle[targetIdx],
+              durationStudied:
+                (cycle[targetIdx].durationStudied || 0) + (session.durationMinutes || 0)
+            };
+          }
+
+          // Se todos os blocos do ciclo foram cumpridos, incrementa ciclos completos e zera para o próximo giro
+          const allDone = cycle.every(c => (c.durationStudied || 0) >= (c.duration || 30));
+          if (allDone) {
+            cyclesCompleted += 1;
+            cycle = cycle.map(c => ({ ...c, durationStudied: 0 }));
+          }
+        }
+
+        return {
+          ...plan,
+          subjects,
+          cycle,
+          cyclesCompleted
+        };
+      });
+
+      // Gera revisões espaçadas se marcado
+      let newReviews = [...(prev.reviews || [])];
+      if (session.scheduleReviews) {
+        const intervals = prev.preferences?.studyReviewDays || [1, 7, 15, 30];
+        const baseDate = new Date((session.date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
+        intervals.forEach(days => {
+          const d = new Date(baseDate);
+          d.setDate(d.getDate() + Number(days));
+          newReviews.push({
+            id: `rev_${Date.now()}_${days}_${Math.random().toString(36).slice(2, 5)}`,
+            planId: currentPlan.id,
+            subjectId: session.subjectId,
+            subjectName: session.subjectName,
+            topicId: session.topicId,
+            topicName: session.topicName,
+            intervalDays: days,
+            dueDate: d.toISOString().split('T')[0],
+            done: false,
+            ignored: false
+          });
+        });
+      }
+
+      return {
+        ...prev,
+        plans: updatedPlans,
+        studyLogs: [newLog, ...(prev.studyLogs || [])],
+        reviews: newReviews
+      };
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-[#1e2235] text-slate-100 flex flex-col font-sans">
+      {/* Top Header fiel aos prints (Logo + Livros + Sino + Avatar de Perfil Lucas/Milayne) */}
+      <header className="sticky top-0 z-30 bg-[#1a1d2e]/95 backdrop-blur border-b border-slate-800 px-4 py-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <div
+            onClick={() => setActiveTab('inicio')}
+            className="flex items-center gap-2.5 cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-lg bg-emerald-400 flex items-center justify-center text-[#1a1d2e] font-black text-lg shadow-md shadow-emerald-500/20">
+              V
+            </div>
+            <div>
+              <span className="text-xl font-black tracking-tight text-white">
+                vértice
+              </span>
+              <span className="hidden sm:inline-block ml-2 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                100% Desbloqueado
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setWizardOpen(true)}
+              title="Novo Plano / Colar Edital"
+              className="px-2.5 py-1.5 rounded-lg bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/30 text-amber-300 text-xs font-bold flex items-center gap-1"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span className="hidden sm:inline">+ Edital</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('mais')}
+              title="Revisões e Lembretes"
+              className="p-2 rounded-lg text-emerald-400 hover:bg-slate-800 relative"
+            >
+              <Bell className="w-5 h-5 fill-current" />
+            </button>
+
+            {/* Alternador de Perfil (Lucas / Milayne) */}
+            <button
+              type="button"
+              onClick={() =>
+                setState(prev => ({
+                  ...prev,
+                  activeProfile: prev.activeProfile === 'lucas' ? 'milayne' : 'lucas'
+                }))
+              }
+              title="Alternar perfil (Lucas / Milayne)"
+              className="px-3 py-1 rounded-full bg-emerald-400 text-[#1a1d2e] font-extrabold text-xs uppercase tracking-wider shadow"
+            >
+              {state.profiles?.[state.activeProfile]?.name || 'Lucas'}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <main className="flex-1 w-full max-w-2xl mx-auto px-3.5 sm:px-5 pt-4">
+        {activeTab === 'inicio' && (
+          <HomeDashboardTab
+            state={state}
+            plan={currentPlan}
+            onSelectPlan={id => setState(prev => ({ ...prev, selectedPlanId: id }))}
+            onOpenNewPlanWizard={() => setWizardOpen(true)}
+            onUpdatePlanMeta={patch =>
+              updateCurrentPlan(p => ({ ...p, ...patch }))
+            }
+            onStartStudyFromCycle={item => {
+              setPreselectedStudy({
+                subjectId: item.subjectId,
+                topicId: item.suggested?.id || item.suggestedTopic?.id || '',
+                cycleItemId: item.id,
+                openForm: false
+              });
+              setActiveTab('estudo');
+            }}
+            onNavigateTab={tab => setActiveTab(tab)}
+            onCompleteReview={revId =>
+              setState(prev => ({
+                ...prev,
+                reviews: (prev.reviews || []).map(r =>
+                  r.id === revId ? { ...r, done: true } : r
+                )
+              }))
+            }
+          />
+        )}
+
+        {activeTab === 'edital' && (
+          <EditalVerticalTab
+            plan={currentPlan}
+            onToggleTopicCascade={handleToggleTopicCascade}
+            onPasteTopicsIntoSubject={handlePasteTopicsIntoSubject}
+            onOpenStudyForTopic={(subjectId, topicId) => {
+              setPreselectedStudy({ subjectId, topicId, openForm: true });
+              setActiveTab('estudo');
+            }}
+          />
+        )}
+
+        {activeTab === 'estudo' && (
+          <StudyRegisterTab
+            plan={currentPlan}
+            preselected={preselectedStudy}
+            onSaveStudySession={handleSaveStudySession}
+          />
+        )}
+
+        {activeTab === 'planejamento' && (
+          <CycleTab
+            plan={currentPlan}
+            onRestartCycle={() =>
+              updateCurrentPlan(p => ({
+                ...p,
+                cycle: (p.cycle || []).map(c => ({ ...c, durationStudied: 0 }))
+              }))
+            }
+            onUpdateCycleHours={newHours =>
+              updateCurrentPlan(p => ({
+                ...p,
+                weeklyGoalHours: newHours,
+                weeklyGoalQuestions: Math.round(newHours * 7),
+                cycle: generateStudyCycle(p.subjects, newHours)
+              }))
+            }
+            onToggleSuggestTopics={() =>
+              updateCurrentPlan(p => ({
+                ...p,
+                autoSuggestTopics: !p.autoSuggestTopics
+              }))
+            }
+            onStartStudyFromCycle={item => {
+              setPreselectedStudy({
+                subjectId: item.subjectId,
+                topicId: item.suggestedTopic?.id || '',
+                cycleItemId: item.id,
+                openForm: false
+              });
+              setActiveTab('estudo');
+            }}
+          />
+        )}
+
+        {activeTab === 'mais' && (
+          <MoreHubTab
+            state={state}
+            plan={currentPlan}
+            onSelectPlan={id => {
+              setState(prev => ({ ...prev, selectedPlanId: id }));
+              setActiveTab('inicio');
+            }}
+            onOpenNewPlanWizard={() => setWizardOpen(true)}
+            onDeletePlan={id =>
+              setState(prev => {
+                const rest = (prev.plans || []).filter(p => p.id !== id);
+                return {
+                  ...prev,
+                  plans: rest,
+                  selectedPlanId: rest[0]?.id || ''
+                };
+              })
+            }
+            onCompleteReview={revId =>
+              setState(prev => ({
+                ...prev,
+                reviews: (prev.reviews || []).map(r =>
+                  r.id === revId ? { ...r, done: true } : r
+                )
+              }))
+            }
+            onIgnoreReview={revId =>
+              setState(prev => ({
+                ...prev,
+                reviews: (prev.reviews || []).map(r =>
+                  r.id === revId ? { ...r, ignored: true } : r
+                )
+              }))
+            }
+            onAddSimulado={sim =>
+              setState(prev => ({
+                ...prev,
+                simulados: [sim, ...(prev.simulados || [])]
+              }))
+            }
+            onDeleteStudyLog={logId =>
+              setState(prev => ({
+                ...prev,
+                studyLogs: (prev.studyLogs || []).filter(l => l.id !== logId)
+              }))
+            }
+            onAddReminder={rem =>
+              setState(prev => ({
+                ...prev,
+                reminders: [...(prev.reminders || []), rem]
+              }))
+            }
+            onToggleReminder={remId =>
+              setState(prev => ({
+                ...prev,
+                reminders: (prev.reminders || []).map(r =>
+                  r.id === remId ? { ...r, done: !r.done } : r
+                )
+              }))
+            }
+            onReplaceFullState={newState => setState(newState)}
+          />
+        )}
+      </main>
+
+      {/* Botão Flutuante Verde (Quick Register) fiel aos prints */}
+      {activeTab !== 'estudo' && (
+        <button
+          type="button"
+          onClick={() => {
+            setPreselectedStudy({ openForm: true });
+            setActiveTab('estudo');
+          }}
+          title="Registrar Estudo Rápido"
+          className="fixed bottom-20 right-5 z-30 w-12 h-12 rounded-full bg-emerald-400 hover:bg-emerald-300 text-[#1a1d2e] flex items-center justify-center shadow-xl shadow-emerald-500/30"
+        >
+          <Plus className="w-6 h-6 stroke-[2.5]" />
+        </button>
+      )}
+
+      {/* Barra de Navegação Inferior com as 5 abas exatas dos prints: Início | Edital | Estudo | Planejamento | Ver mais */}
+      <nav className="fixed bottom-0 inset-x-0 z-30 bg-[#1a1d2e] border-t border-slate-800">
+        <div className="max-w-2xl mx-auto grid grid-cols-5">
+          {[
+            { id: 'inicio', label: 'Início', icon: Home },
+            { id: 'edital', label: 'Edital', icon: FileText },
+            { id: 'estudo', label: 'Estudo', icon: PlusCircle },
+            { id: 'planejamento', label: 'Planejamento', icon: Calendar },
+            { id: 'mais', label: 'Ver mais', icon: Menu }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-2.5 flex flex-col items-center justify-center gap-1 relative transition-colors ${
+                  active ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[11px] font-medium">{tab.label}</span>
+                {active && (
+                  <span className="absolute bottom-0 inset-x-4 h-1 rounded-t-full bg-emerald-400" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* Modal Wizard de Novo Plano + Colar Edital */}
+      {wizardOpen && (
+        <NewPlanWizardModal
+          onSavePlan={newPlan => {
+            setState(prev => ({
+              ...prev,
+              plans: [newPlan, ...(prev.plans || [])],
+              selectedPlanId: newPlan.id
+            }));
+            setWizardOpen(false);
+            setActiveTab('planejamento');
+          }}
+          onClose={() => setWizardOpen(false)}
+        />
+      )}
+    </div>
+  );
+}

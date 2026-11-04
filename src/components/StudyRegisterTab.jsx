@@ -1,25 +1,24 @@
-// Tela Registrar Estudo: Aba 1 (Cronômetro / Timer / Pomodoro + Planejamento do Dia)
+// Tela Registrar Estudo: Aba 1 (Cronômetro Persistente por Timestamp / Timer / Pomodoro + Permissões PWA + Planejamento do Dia)
 // e Aba 2 (Formulário completo fiel ao print: Data, Categoria, Disciplina, Tópico,
 // Contabilizar no Planejamento, Programar Revisões, Material, Tempo, Questões Acertos/Erros,
 // Páginas Início/Fim, Videoaulas e Comentários)
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Play,
   Pause,
   RotateCcw,
   Check,
   Sparkles,
-  Plus,
-  Clock
+  Bell,
+  ShieldCheck,
+  Sun
 } from 'lucide-react';
-
-function formatHHMMSS(totalSeconds) {
-  const s = Math.max(0, Math.floor(totalSeconds || 0));
-  const hrs = Math.floor(s / 3600);
-  const mins = Math.floor((s % 3600) / 60);
-  const secs = s % 60;
-  return [hrs, mins, secs].map(v => v.toString().padStart(2, '0')).join(':');
-}
+import {
+  formatHHMMSS,
+  computeTimerSnapshot,
+  getNotificationPermissionStatus,
+  requestTimerNotificationPermission
+} from '../utils/persistentTimer';
 
 function parseHHMMSSToMinutes(str) {
   const parts = (str || '00:00:00').split(':').map(n => parseInt(n, 10) || 0);
@@ -35,21 +34,26 @@ function parseHHMMSSToMinutes(str) {
 export default function StudyRegisterTab({
   plan,
   preselected,
+  timerState,
+  timerSnapshot,
+  wakeLockActive,
+  onToggleTimerPlayPause,
+  onAddTimerSeconds,
+  onResetTimer,
+  onSwitchTimerMode,
+  onSetTimerContext,
   onSaveStudySession
 }) {
   const [subTab, setSubTab] = useState('cronometro'); // 'cronometro' | 'formulario'
-  const [timerMode, setTimerMode] = useState('cronometro'); // 'cronometro' | 'timer' | 'pomodoro'
-  const [running, setRunning] = useState(false);
-  const [seconds, setSeconds] = useState(0);
-  const intervalRef = useRef(null);
+  const [notifPerm, setNotifPerm] = useState(() => getNotificationPermissionStatus());
 
   // Estado do formulário "Registrar Estudo"
   const todayStr = new Date().toISOString().split('T')[0];
   const [date, setDate] = useState(todayStr);
   const [category, setCategory] = useState('Teoria'); // Teoria | Revisão | Questões
-  const [subjectId, setSubjectId] = useState('');
-  const [topicId, setTopicId] = useState('');
-  const [cycleItemId, setCycleItemId] = useState('');
+  const [subjectId, setSubjectId] = useState(timerState?.subjectId || '');
+  const [topicId, setTopicId] = useState(timerState?.topicId || '');
+  const [cycleItemId, setCycleItemId] = useState(timerState?.cycleItemId || '');
   const [addToPlanning, setAddToPlanning] = useState(true);
   const [scheduleReviews, setScheduleReviews] = useState(true);
   const [material, setMaterial] = useState('');
@@ -64,62 +68,71 @@ export default function StudyRegisterTab({
   const [comments, setComments] = useState('');
   const [savedBanner, setSavedBanner] = useState(false);
 
+  const subjects = plan?.subjects || [];
+
   // Aplica pré-seleção vinda do Ciclo ou do Edital Verticalizado
   useEffect(() => {
     if (preselected) {
+      const nextSubjId = preselected.subjectId || subjectId || subjects[0]?.id || '';
+      const nextSubj = subjects.find(s => s.id === nextSubjId);
+      const nextTopId = preselected.topicId ?? '';
+      const nextTop = (nextSubj?.topics || []).find(t => t.id === nextTopId);
+      const nextCycId = preselected.cycleItemId || '';
+
       if (preselected.subjectId) setSubjectId(preselected.subjectId);
-      if (preselected.topicId) setTopicId(preselected.topicId);
-      if (preselected.cycleItemId) setCycleItemId(preselected.cycleItemId);
+      if (preselected.topicId !== undefined) setTopicId(preselected.topicId);
+      if (preselected.cycleItemId !== undefined) setCycleItemId(preselected.cycleItemId);
       if (preselected.openForm) setSubTab('formulario');
-    } else if (plan?.subjects?.length && !subjectId) {
-      setSubjectId(plan.subjects[0].id);
+
+      if (onSetTimerContext && nextSubj) {
+        onSetTimerContext({
+          subjectId: nextSubj.id,
+          subjectName: nextSubj.name,
+          topicId: nextTop?.id || '',
+          topicName: nextTop?.name || '',
+          cycleItemId: nextCycId
+        });
+      }
+    } else if (subjects.length && !subjectId) {
+      const first = subjects[0];
+      setSubjectId(first.id);
+      if (onSetTimerContext && !timerState?.subjectId) {
+        onSetTimerContext({
+          subjectId: first.id,
+          subjectName: first.name,
+          topicId: '',
+          topicName: '',
+          cycleItemId: ''
+        });
+      }
     }
   }, [preselected, plan]);
 
-  // Controle do cronômetro/timer/pomodoro
-  useEffect(() => {
-    if (!running) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
-    intervalRef.current = setInterval(() => {
-      setSeconds(prev => {
-        if (timerMode === 'cronometro') return prev + 1;
-        if (prev <= 1) {
-          setRunning(false);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(intervalRef.current);
-  }, [running, timerMode]);
+  if (!plan) return null;
 
-  const switchTimerMode = mode => {
-    setRunning(false);
-    setTimerMode(mode);
-    if (mode === 'cronometro') setSeconds(0);
-    if (mode === 'timer') setSeconds(30 * 60);
-    if (mode === 'pomodoro') setSeconds(25 * 60);
-  };
+  const snap = timerSnapshot || computeTimerSnapshot(timerState);
+  const running = !!timerState?.running;
+  const timerMode = timerState?.mode || 'cronometro';
+
+  const currentSubject = subjects.find(s => s.id === subjectId) || subjects[0] || null;
+  const availableTopics = currentSubject ? currentSubject.topics || [] : [];
 
   const transferTimerToForm = () => {
-    setRunning(false);
-    const elapsedSecs =
-      timerMode === 'cronometro'
-        ? Math.max(60, seconds)
-        : timerMode === 'pomodoro'
-        ? Math.max(60, 25 * 60 - seconds)
-        : Math.max(60, 30 * 60 - seconds);
+    if (running) {
+      onToggleTimerPlayPause();
+    }
+    const elapsedSecs = Math.max(60, snap.elapsedSeconds || snap.displaySeconds || 60);
     setTimeStr(formatHHMMSS(elapsedSecs));
+    if (timerState?.subjectId) setSubjectId(timerState.subjectId);
+    if (timerState?.topicId) setTopicId(timerState.topicId);
+    if (timerState?.cycleItemId) setCycleItemId(timerState.cycleItemId);
     setSubTab('formulario');
   };
 
-  if (!plan) return null;
-
-  const subjects = plan.subjects || [];
-  const currentSubject = subjects.find(s => s.id === subjectId) || subjects[0] || null;
-  const availableTopics = currentSubject ? currentSubject.topics || [] : [];
+  const handleEnableNotifications = async () => {
+    const res = await requestTimerNotificationPermission();
+    setNotifPerm(res);
+  };
 
   const handleSubmit = e => {
     e.preventDefault();
@@ -148,8 +161,11 @@ export default function StudyRegisterTab({
       comments: comments.trim()
     });
 
+    // Zera o cronômetro após registrar a sessão concluída
+    if (onResetTimer) onResetTimer();
+
     setSavedBanner(true);
-    setTimeout(() => setSavedBanner(false), 3000);
+    setTimeout(() => setSavedBanner(false), 3500);
     setQuestionsHit(0);
     setQuestionsMiss(0);
     setComments('');
@@ -211,17 +227,84 @@ export default function StudyRegisterTab({
       )}
 
       {subTab === 'cronometro' ? (
-        <div className="space-y-6 pt-2">
-          <p className="text-center text-sm text-slate-200">
-            Contabilize e registre seus estudos!
-          </p>
+        <div className="space-y-5 pt-2">
+          {/* Disciplina ativa sendo cronometrada */}
+          <div className="p-3 rounded-xl bg-[#252a40] border border-slate-700/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-bold uppercase text-emerald-400 block">
+                Matéria em Estudo no Cronômetro
+              </span>
+              <select
+                value={subjectId || currentSubject?.id || ''}
+                onChange={e => {
+                  const newId = e.target.value;
+                  setSubjectId(newId);
+                  setTopicId('');
+                  const sObj = subjects.find(s => s.id === newId);
+                  if (onSetTimerContext && sObj) {
+                    onSetTimerContext({
+                      subjectId: sObj.id,
+                      subjectName: sObj.name,
+                      topicId: '',
+                      topicName: '',
+                      cycleItemId: ''
+                    });
+                  }
+                }}
+                className="w-full bg-transparent text-xs sm:text-sm font-bold text-white focus:outline-none truncate mt-0.5"
+              >
+                {subjects.map(s => (
+                  <option key={s.id} value={s.id} className="bg-[#1e2235] text-white">
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="min-w-0 flex-1 sm:border-l sm:border-slate-700 sm:pl-3">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                Tópico (Opcional)
+              </span>
+              <select
+                value={topicId}
+                onChange={e => {
+                  const newTopId = e.target.value;
+                  setTopicId(newTopId);
+                  const tObj = availableTopics.find(t => t.id === newTopId);
+                  if (onSetTimerContext) {
+                    onSetTimerContext({
+                      subjectId: currentSubject?.id || '',
+                      subjectName: currentSubject?.name || '',
+                      topicId: tObj?.id || '',
+                      topicName: tObj?.name || '',
+                      cycleItemId
+                    });
+                  }
+                }}
+                className="w-full bg-transparent text-xs text-slate-200 focus:outline-none truncate mt-0.5"
+              >
+                <option value="" className="bg-[#1e2235] text-slate-300">
+                  Geral / Todos os tópicos
+                </option>
+                {availableTopics.map(t => (
+                  <option key={t.id} value={t.id} className="bg-[#1e2235] text-white">
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {/* Botão Play/Pause Gigante Verde */}
           <div className="flex flex-col items-center justify-center space-y-4">
             <button
               type="button"
-              onClick={() => setRunning(r => !r)}
-              className="w-28 h-28 rounded-full bg-emerald-400 hover:bg-emerald-300 text-[#1e2235] flex items-center justify-center shadow-2xl shadow-emerald-500/30 transition-transform active:scale-95"
+              onClick={onToggleTimerPlayPause}
+              className={`w-28 h-28 rounded-full text-[#1e2235] flex items-center justify-center shadow-2xl transition-transform active:scale-95 ${
+                running
+                  ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-500/30'
+                  : 'bg-emerald-400 hover:bg-emerald-300 shadow-emerald-500/30'
+              }`}
             >
               {running ? (
                 <Pause className="w-12 h-12 fill-current" />
@@ -230,33 +313,40 @@ export default function StudyRegisterTab({
               )}
             </button>
 
-            <div className="text-4xl font-mono font-extrabold text-white tracking-wider">
-              {formatHHMMSS(seconds)}
+            <div className="text-center">
+              <div className="text-4xl sm:text-5xl font-mono font-extrabold text-white tracking-wider">
+                {formatHHMMSS(snap.displaySeconds)}
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-400 mt-1 inline-flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                {running
+                  ? 'Rodando em 2º plano (pode trocar de app ou bloquear a tela)'
+                  : snap.elapsedSeconds > 0
+                  ? 'Pausado e salvo na memória do aparelho'
+                  : 'Pronto para iniciar'}
+              </span>
             </div>
 
-            {/* Botões rápidos +1min / +15min / Finalizar e Salvar */}
+            {/* Botões rápidos +1min / +15min / Zerar / Salvar no Formulário */}
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
-                onClick={() => setSeconds(s => s + 60)}
-                className="px-3 py-1 rounded-full bg-violet-600/30 border border-violet-500/40 text-xs font-bold text-violet-200"
+                onClick={() => onAddTimerSeconds(60)}
+                className="px-3 py-1 rounded-full bg-violet-600/30 border border-violet-500/40 text-xs font-bold text-violet-200 hover:bg-violet-600/40"
               >
                 + 1min
               </button>
               <button
                 type="button"
-                onClick={() => setSeconds(s => s + 900)}
-                className="px-3 py-1 rounded-full bg-violet-600/30 border border-violet-500/40 text-xs font-bold text-violet-200"
+                onClick={() => onAddTimerSeconds(900)}
+                className="px-3 py-1 rounded-full bg-violet-600/30 border border-violet-500/40 text-xs font-bold text-violet-200 hover:bg-violet-600/40"
               >
                 + 15min
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setRunning(false);
-                  setSeconds(0);
-                }}
-                className="px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1"
+                onClick={onResetTimer}
+                className="px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1 hover:bg-slate-700"
               >
                 <RotateCcw className="w-3 h-3" />
                 Zerar
@@ -264,7 +354,7 @@ export default function StudyRegisterTab({
               <button
                 type="button"
                 onClick={transferTimerToForm}
-                className="px-4 py-1 rounded-full bg-emerald-500 text-slate-950 font-bold text-xs flex items-center gap-1"
+                className="px-4 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1"
               >
                 <Check className="w-3.5 h-3.5" />
                 Salvar Tempo no Formulário
@@ -281,7 +371,7 @@ export default function StudyRegisterTab({
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => switchTimerMode(m.id)}
+                  onClick={() => onSwitchTimerMode(m.id)}
                   className={`px-3.5 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
                     timerMode === m.id
                       ? 'bg-emerald-600/30 border-emerald-400 text-white'
@@ -294,39 +384,100 @@ export default function StudyRegisterTab({
             </div>
           </div>
 
+          {/* Barra de Permanência & Permissões do Celular (Notificações + Wake Lock) */}
+          <div className="p-3.5 rounded-2xl bg-[#252a40] border border-slate-700/70 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 text-xs text-slate-200">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>Permanência ativa:</strong> o cronômetro usa o relógio físico do aparelho e continua rodando mesmo se você sair do Vértice.
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {notifPerm === 'granted' ? (
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold flex items-center gap-1">
+                  <Bell className="w-3.5 h-3.5" />
+                  Notificações 2º Plano: Ativas ✓
+                </span>
+              ) : notifPerm !== 'unsupported' ? (
+                <button
+                  type="button"
+                  onClick={handleEnableNotifications}
+                  className="px-3 py-1 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/40 text-amber-200 text-[11px] font-bold flex items-center gap-1"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  Permitir Notificações em 2º Plano
+                </button>
+              ) : null}
+
+              <span
+                className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1 ${
+                  wakeLockActive
+                    ? 'bg-sky-500/15 border-sky-500/30 text-sky-300'
+                    : 'bg-slate-800 border-slate-700 text-slate-400'
+                }`}
+              >
+                <Sun className="w-3.5 h-3.5" />
+                {wakeLockActive ? 'Tela Sempre Acesa: Ativa' : 'Tela Acesa ao dar Play'}
+              </span>
+            </div>
+          </div>
+
           {/* PLANEJAMENTO DO DIA */}
-          <div className="space-y-2.5 pt-2">
-            <div className="border-b border-slate-600 pb-1">
+          <div className="space-y-2.5 pt-1">
+            <div className="border-b border-slate-600 pb-1 flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-white">
                 PLANEJAMENTO DO DIA
               </span>
+              <span className="text-[11px] text-slate-400">
+                Toque em um bloco para carregar a matéria no cronômetro
+              </span>
             </div>
-            <span className="text-[11px] font-bold uppercase text-slate-300 block">
-              ESTUDOS
-            </span>
 
             <div className="space-y-2.5">
               {dayQueue.map(item => {
                 const pct = item.duration
                   ? Math.min(100, Math.round(((item.durationStudied || 0) / item.duration) * 100))
                   : 0;
+                const isSelectedInTimer = timerState?.cycleItemId === item.id;
                 return (
                   <div
                     key={item.id}
                     onClick={() => {
                       setSubjectId(item.subjectId);
-                      if (item.suggested) setTopicId(item.suggested.id);
+                      setTopicId(item.suggested?.id || '');
                       setCycleItemId(item.id);
-                      setSubTab('formulario');
+                      if (onSetTimerContext) {
+                        onSetTimerContext({
+                          subjectId: item.subjectId,
+                          subjectName: item.subjectName,
+                          topicId: item.suggested?.id || '',
+                          topicName: item.suggested?.name || '',
+                          cycleItemId: item.id
+                        });
+                      }
                     }}
-                    className="p-3.5 rounded-xl bg-[#2c3148] hover:bg-[#323852] border border-slate-700/70 flex items-center gap-3 cursor-pointer transition-colors"
+                    className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition-colors ${
+                      isSelectedInTimer
+                        ? 'bg-emerald-950/30 border-emerald-500/50'
+                        : 'bg-[#2c3148] hover:bg-[#323852] border-slate-700/70'
+                    }`}
                   >
                     <div
                       className="w-2 self-stretch rounded-full shrink-0"
                       style={{ backgroundColor: item.subjectColor || '#f43f5e' }}
                     />
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-white text-sm">{item.subjectName}</h4>
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="font-bold text-white text-sm truncate">
+                          {item.subjectName}
+                        </h4>
+                        {isSelectedInTimer && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                            Selecionado no Cronômetro
+                          </span>
+                        )}
+                      </div>
                       {item.suggested && (
                         <p className="text-xs text-slate-300 truncate flex items-center gap-1 mt-0.5">
                           <Sparkles className="w-3 h-3 text-emerald-400 shrink-0" />

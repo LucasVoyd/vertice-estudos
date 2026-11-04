@@ -7,10 +7,25 @@ import {
   Menu,
   BookOpen,
   Bell,
-  Plus
+  Plus,
+  Play,
+  Pause,
+  Clock
 } from 'lucide-react';
 import { loadAppState, saveAppState } from './utils/appStore';
 import { linesToTopicsTree, generateStudyCycle, calculateSubjectWeight } from './utils/editalParser';
+import {
+  loadPersistentTimer,
+  savePersistentTimer,
+  computeTimerSnapshot,
+  formatHHMMSS,
+  registerVerticeServiceWorker,
+  showBackgroundTimerNotification,
+  clearBackgroundTimerNotification,
+  notifyCountdownFinished,
+  requestScreenWakeLock,
+  releaseScreenWakeLock
+} from './utils/persistentTimer';
 import HomeDashboardTab from './components/HomeDashboardTab';
 import EditalVerticalTab from './components/EditalVerticalTab';
 import StudyRegisterTab from './components/StudyRegisterTab';
@@ -20,13 +35,184 @@ import { NewPlanWizardModal } from './components/EditalWizardModal';
 
 export default function App() {
   const [state, setState] = useState(() => loadAppState());
-  const [activeTab, setActiveTab] = useState('inicio'); // 'inicio' | 'edital' | 'estudo' | 'planejamento' | 'mais'
+  const [timerState, setTimerState] = useState(() => loadPersistentTimer());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [wakeLockActive, setWakeLockActive] = useState(false);
+
+  // Se o app foi reaberto no celular com o cronômetro rodando, abre direto na aba Estudo
+  const [activeTab, setActiveTab] = useState(() => {
+    const initialTimer = loadPersistentTimer();
+    return initialTimer.running ? 'estudo' : 'inicio';
+  });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [preselectedStudy, setPreselectedStudy] = useState(null);
 
   useEffect(() => {
     saveAppState(state);
   }, [state]);
+
+  // Registra o Service Worker do PWA ao iniciar
+  useEffect(() => {
+    registerVerticeServiceWorker();
+  }, []);
+
+  // Salva imediatamente qualquer mudança de estado do cronômetro no localStorage
+  const updateTimerState = updater => {
+    setTimerState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return savePersistentTimer(next);
+    });
+    setNowMs(Date.now());
+  };
+
+  // Relógio de parede global (atualiza a cada 250ms e sincroniza imediatamente ao voltar do 2º plano no Android/iOS)
+  useEffect(() => {
+    const syncClock = () => {
+      const currentNow = Date.now();
+      setNowMs(currentNow);
+      const latest = loadPersistentTimer();
+      const snap = computeTimerSnapshot(latest, currentNow);
+
+      // Se for Timer (30m) ou Pomodoro (25m) e tiver chegado a zero em 2º plano ou 1º plano
+      if (snap.isFinished && latest.running) {
+        const finishedState = savePersistentTimer({
+          ...latest,
+          running: false,
+          startedAtMs: null,
+          accumulatedSeconds: latest.targetSeconds || 1800,
+          completionNotified: true
+        });
+        setTimerState(finishedState);
+        notifyCountdownFinished(finishedState);
+        releaseScreenWakeLock().then(() => setWakeLockActive(false));
+      }
+    };
+
+    const intervalId = setInterval(syncClock, 250);
+
+    const handleVisibilityChange = () => {
+      const latest = loadPersistentTimer();
+      if (document.visibilityState === 'hidden') {
+        if (latest.running) {
+          showBackgroundTimerNotification(latest);
+        }
+      } else {
+        // Voltou para o aplicativo: recalcula imediatamente pelo relógio físico do sistema
+        setTimerState(latest);
+        setNowMs(Date.now());
+        clearBackgroundTimerNotification();
+        if (latest.running) {
+          requestScreenWakeLock().then(ok => setWakeLockActive(ok));
+        }
+      }
+    };
+
+    const handleFocusOrPageShow = () => {
+      const latest = loadPersistentTimer();
+      setTimerState(latest);
+      setNowMs(Date.now());
+      clearBackgroundTimerNotification();
+      if (latest.running) {
+        requestScreenWakeLock().then(ok => setWakeLockActive(ok));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocusOrPageShow);
+    window.addEventListener('pageshow', handleFocusOrPageShow);
+
+    // Se já iniciou rodando, solicita Wake Lock
+    if (timerState.running) {
+      requestScreenWakeLock().then(ok => setWakeLockActive(ok));
+    }
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocusOrPageShow);
+      window.removeEventListener('pageshow', handleFocusOrPageShow);
+    };
+  }, [timerState.running]);
+
+  const timerSnapshot = computeTimerSnapshot(timerState, nowMs);
+
+  // Controles do Cronômetro Persistente
+  const handleToggleTimerPlayPause = () => {
+    const now = Date.now();
+    updateTimerState(prev => {
+      if (prev.running) {
+        // Pausar: consolida os segundos decorridos desde startedAtMs em accumulatedSeconds
+        const delta = prev.startedAtMs
+          ? Math.max(0, Math.floor((now - Number(prev.startedAtMs)) / 1000))
+          : 0;
+        releaseScreenWakeLock().then(() => setWakeLockActive(false));
+        clearBackgroundTimerNotification();
+        return {
+          ...prev,
+          running: false,
+          startedAtMs: null,
+          accumulatedSeconds: (Number(prev.accumulatedSeconds) || 0) + delta
+        };
+      } else {
+        // Dar Play: se Timer/Pomodoro já tinha zerado, reinicia a contagem
+        const target = prev.targetSeconds || (prev.mode === 'pomodoro' ? 1500 : 1800);
+        const resetAcc =
+          prev.mode !== 'cronometro' && (Number(prev.accumulatedSeconds) || 0) >= target
+            ? 0
+            : Number(prev.accumulatedSeconds) || 0;
+
+        requestScreenWakeLock().then(ok => setWakeLockActive(ok));
+        return {
+          ...prev,
+          running: true,
+          startedAtMs: now,
+          accumulatedSeconds: resetAcc,
+          completionNotified: false
+        };
+      }
+    });
+  };
+
+  const handleAddTimerSeconds = extraSecs => {
+    updateTimerState(prev => ({
+      ...prev,
+      accumulatedSeconds: Math.max(0, (Number(prev.accumulatedSeconds) || 0) + extraSecs)
+    }));
+  };
+
+  const handleResetTimer = () => {
+    releaseScreenWakeLock().then(() => setWakeLockActive(false));
+    clearBackgroundTimerNotification();
+    updateTimerState(prev => ({
+      ...prev,
+      running: false,
+      startedAtMs: null,
+      accumulatedSeconds: 0,
+      completionNotified: false
+    }));
+  };
+
+  const handleSwitchTimerMode = newMode => {
+    releaseScreenWakeLock().then(() => setWakeLockActive(false));
+    clearBackgroundTimerNotification();
+    const targetSeconds = newMode === 'pomodoro' ? 25 * 60 : 30 * 60;
+    updateTimerState(prev => ({
+      ...prev,
+      mode: newMode,
+      running: false,
+      startedAtMs: null,
+      accumulatedSeconds: 0,
+      targetSeconds,
+      completionNotified: false
+    }));
+  };
+
+  const handleSetTimerContext = ctx => {
+    updateTimerState(prev => ({
+      ...prev,
+      ...ctx
+    }));
+  };
 
   const currentPlan =
     (state.plans || []).find(p => p.id === state.selectedPlanId) ||
@@ -49,7 +235,6 @@ export default function App() {
         if (subj.id !== subjectId) return subj;
         const topics = [...(subj.topics || [])];
 
-        // Descobre todos os descendentes recursivamente
         const getDescendantIds = parentId => {
           const children = topics.filter(t => t.parentId === parentId);
           return children.reduce(
@@ -101,7 +286,6 @@ export default function App() {
         ...session
       };
 
-      // Atualiza plano (tópico + bloco do ciclo)
       const updatedPlans = (prev.plans || []).map(plan => {
         if (plan.id !== currentPlan.id) return plan;
 
@@ -143,7 +327,6 @@ export default function App() {
             };
           }
 
-          // Se todos os blocos do ciclo foram cumpridos, incrementa ciclos completos e zera para o próximo giro
           const allDone = cycle.every(c => (c.durationStudied || 0) >= (c.duration || 30));
           if (allDone) {
             cyclesCompleted += 1;
@@ -159,7 +342,6 @@ export default function App() {
         };
       });
 
-      // Gera revisões espaçadas se marcado
       let newReviews = [...(prev.reviews || [])];
       if (session.scheduleReviews) {
         const intervals = prev.preferences?.studyReviewDays || [1, 7, 15, 30];
@@ -190,6 +372,8 @@ export default function App() {
       };
     });
   };
+
+  const hasActiveTimerSession = timerState.running || timerSnapshot.elapsedSeconds > 0;
 
   return (
     <div className="min-h-screen bg-[#1e2235] text-slate-100 flex flex-col font-sans">
@@ -316,6 +500,14 @@ export default function App() {
           <StudyRegisterTab
             plan={currentPlan}
             preselected={preselectedStudy}
+            timerState={timerState}
+            timerSnapshot={timerSnapshot}
+            wakeLockActive={wakeLockActive}
+            onToggleTimerPlayPause={handleToggleTimerPlayPause}
+            onAddTimerSeconds={handleAddTimerSeconds}
+            onResetTimer={handleResetTimer}
+            onSwitchTimerMode={handleSwitchTimerMode}
+            onSetTimerContext={handleSetTimerContext}
             onSaveStudySession={handleSaveStudySession}
           />
         )}
@@ -422,8 +614,59 @@ export default function App() {
         )}
       </main>
 
+      {/* Mini-Player Flutuante Global quando o Cronômetro está ativo e o usuário navega por outras abas */}
+      {activeTab !== 'estudo' && hasActiveTimerSession && (
+        <div className="fixed bottom-16 inset-x-3 z-40 max-w-2xl mx-auto">
+          <div className="p-3 rounded-2xl bg-[#141726]/95 backdrop-blur border border-emerald-500/50 shadow-2xl flex items-center justify-between gap-3">
+            <div
+              onClick={() => setActiveTab('estudo')}
+              className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+            >
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  timerState.running
+                    ? 'bg-emerald-500/20 text-emerald-400 animate-pulse'
+                    : 'bg-amber-500/20 text-amber-300'
+                }`}
+              >
+                <Clock className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-extrabold text-base text-white">
+                    {formatHHMMSS(timerSnapshot.displaySeconds)}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    {timerState.running ? 'Rodando' : 'Pausado'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 truncate">
+                  {timerState.subjectName || 'Sessão de estudo ativa'} — Toque para abrir
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleToggleTimerPlayPause}
+                className={`p-2.5 rounded-xl font-bold text-slate-950 ${
+                  timerState.running ? 'bg-amber-400' : 'bg-emerald-400'
+                }`}
+              >
+                {timerState.running ? (
+                  <Pause className="w-4 h-4 fill-current" />
+                ) : (
+                  <Play className="w-4 h-4 fill-current" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Botão Flutuante Verde (Quick Register) fiel aos prints */}
-      {activeTab !== 'estudo' && (
+      {activeTab !== 'estudo' && !hasActiveTimerSession && (
         <button
           type="button"
           onClick={() => {
@@ -443,7 +686,7 @@ export default function App() {
           {[
             { id: 'inicio', label: 'Início', icon: Home },
             { id: 'edital', label: 'Edital', icon: FileText },
-            { id: 'estudo', label: 'Estudo', icon: PlusCircle },
+            { id: 'estudo', label: 'Estudo', icon: PlusCircle, badge: timerState.running },
             { id: 'planejamento', label: 'Planejamento', icon: Calendar },
             { id: 'mais', label: 'Ver mais', icon: Menu }
           ].map(tab => {
@@ -458,7 +701,12 @@ export default function App() {
                   active ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Icon className="w-5 h-5" />
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  {tab.badge && (
+                    <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#1a1d2e] animate-ping" />
+                  )}
+                </div>
                 <span className="text-[11px] font-medium">{tab.label}</span>
                 {active && (
                   <span className="absolute bottom-0 inset-x-4 h-1 rounded-t-full bg-emerald-400" />

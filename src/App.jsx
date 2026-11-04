@@ -10,7 +10,7 @@ import {
   Plus
 } from 'lucide-react';
 import { loadAppState, saveAppState } from './utils/appStore';
-import { linesToTopicsTree, generateStudyCycle } from './utils/editalParser';
+import { linesToTopicsTree, generateStudyCycle, calculateSubjectWeight } from './utils/editalParser';
 import HomeDashboardTab from './components/HomeDashboardTab';
 import EditalVerticalTab from './components/EditalVerticalTab';
 import StudyRegisterTab from './components/StudyRegisterTab';
@@ -288,6 +288,23 @@ export default function App() {
             plan={currentPlan}
             onToggleTopicCascade={handleToggleTopicCascade}
             onPasteTopicsIntoSubject={handlePasteTopicsIntoSubject}
+            onQuickChangeSubjectKnowledge={(subjectId, newKnowledge) =>
+              updateCurrentPlan(p => {
+                const updatedSubjects = (p.subjects || []).map(s => {
+                  if (s.id !== subjectId) return s;
+                  return {
+                    ...s,
+                    knowledge: newKnowledge,
+                    weightAbsolute: calculateSubjectWeight(newKnowledge, s.importance)
+                  };
+                });
+                return {
+                  ...p,
+                  subjects: updatedSubjects,
+                  cycle: generateStudyCycle(updatedSubjects, p.weeklyGoalHours || 14)
+                };
+              })
+            }
             onOpenStudyForTopic={(subjectId, topicId) => {
               setPreselectedStudy({ subjectId, topicId, openForm: true });
               setActiveTab('estudo');
@@ -312,12 +329,13 @@ export default function App() {
                 cycle: (p.cycle || []).map(c => ({ ...c, durationStudied: 0 }))
               }))
             }
-            onUpdateCycleHours={newHours =>
+            onSaveCycleConfig={(updatedSubjects, newHours) =>
               updateCurrentPlan(p => ({
                 ...p,
+                subjects: updatedSubjects,
                 weeklyGoalHours: newHours,
                 weeklyGoalQuestions: Math.round(newHours * 7),
-                cycle: generateStudyCycle(p.subjects, newHours)
+                cycle: generateStudyCycle(updatedSubjects, newHours)
               }))
             }
             onToggleSuggestTopics={() =>

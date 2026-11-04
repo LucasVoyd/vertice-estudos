@@ -1,10 +1,11 @@
-// Persistência Local-First + Sincronização Opcional com Supabase + Sementes (CMC 2026 Selecon & CREA-MT)
+// Persistência Local-First + Sincronização Opcional com Supabase + Sementes (CMC 2026 Selecon Oficial & CREA-MT)
 import { createClient } from '@supabase/supabase-js';
-import { CURRICULUM } from '../data/curriculum';
-import { calculateSubjectWeight, generateStudyCycle } from './editalParser';
+import { buildOfficialTecnicoLegislativoSubjects } from '../data/editalCmc2026Oficial.js';
+import { calculateSubjectWeight, generateStudyCycle } from './editalParser.js';
 
 const STORAGE_KEY = 'vertice_estudos_state_v1';
 const SUPABASE_CFG_KEY = 'vertice_supabase_cfg_v1';
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export const SUBJECT_COLORS = [
   '#10b981', // Emerald
@@ -18,74 +19,12 @@ export const SUBJECT_COLORS = [
 ];
 
 /**
- * Converte o currículo rico do stud-cuiaba (40 nós com teoria e questões Selecon)
- * em um Plano de Estudos Verticalizado completo para a Câmara de Cuiabá (CMC 2026).
+ * Constrói o Plano de Estudos Oficial 100% fiel ao Anexo V do Edital Nº 001/2026-CMC
+ * (Consolidado com a Retificação Nº 01/2026 de 04/11/2026 — Banca Instituto Selecon)
+ * enriquecido com as pílulas de teoria e questões Selecon nos respectivos tópicos/subtópicos.
  */
-function buildCmc2026SeedPlan() {
-  const mapDisc = new Map();
-  let colorIdx = 0;
-
-  for (const chapter of CURRICULUM) {
-    for (const node of chapter.nodes || []) {
-      const dName = node.discipline || 'Conhecimentos Gerais';
-      if (!mapDisc.has(dName)) {
-        mapDisc.set(dName, {
-          id: `sub_cmc_${mapDisc.size + 1}`,
-          name: dName,
-          color: SUBJECT_COLORS[colorIdx++ % SUBJECT_COLORS.length],
-          knowledge: 1.5, // Iniciante/Estudando
-          importance: dName.includes('Regimento') || dName.includes('Lei Orgânica') || dName.includes('Portuguesa') ? 4.0 : 2.5,
-          topics: []
-        });
-      }
-      const subj = mapDisc.get(dName);
-      const tNumber = `${subj.topics.filter(t => t.depth === 0).length + 1}`;
-      const parentId = `top_cmc_${node.id}`;
-
-      subj.topics.push({
-        id: parentId,
-        number: tNumber,
-        label: node.title,
-        name: `${tNumber}. ${node.title}`,
-        depth: 0,
-        parentId: null,
-        finished: false,
-        finishedAt: null,
-        questionsHit: 0,
-        questionsMiss: 0,
-        studiedMinutes: 0,
-        lastStudiedAt: null,
-        teoria: node.teoria || null,
-        questions: node.questions || []
-      });
-
-      // Cria subtópicos a partir dos pontos do resumo teórico para demonstrar a árvore verticalizada
-      if (node.teoria && Array.isArray(node.teoria.resumo)) {
-        node.teoria.resumo.forEach((ponto, idx) => {
-          const subNum = `${tNumber}.${idx + 1}`;
-          const shortTitle = ponto.length > 95 ? ponto.slice(0, 92) + '...' : ponto;
-          subj.topics.push({
-            id: `${parentId}_sub_${idx + 1}`,
-            number: subNum,
-            label: shortTitle,
-            name: `${subNum}. ${shortTitle}`,
-            depth: 1,
-            parentId,
-            finished: false,
-            finishedAt: null,
-            questionsHit: 0,
-            questionsMiss: 0,
-            studiedMinutes: 0,
-            lastStudiedAt: null,
-            teoria: null,
-            questions: []
-          });
-        });
-      }
-    }
-  }
-
-  const subjects = [...mapDisc.values()].map(s => ({
+export function buildCmc2026SeedPlan() {
+  const subjects = buildOfficialTecnicoLegislativoSubjects().map(s => ({
     ...s,
     weightAbsolute: calculateSubjectWeight(s.knowledge, s.importance)
   }));
@@ -94,10 +33,10 @@ function buildCmc2026SeedPlan() {
 
   return {
     id: 'plan_cmc_2026',
-    name: 'Câmara de Cuiabá (CMC 2026 • Selecon)',
-    cargo: 'Técnico Legislativo (Nível Médio)',
+    name: 'Câmara de Cuiabá (Edital Nº 001/2026-CMC • Retificado)',
+    cargo: 'Técnico Legislativo (Nível Médio • CNM 01)',
     banca: 'Instituto Selecon',
-    examDate: '2026-12-13',
+    examDate: '2026-12-20', // Retificação Nº 01/2026 (alterada de 13/12 para 20/12/2026)
     weeklyGoalHours: 14,
     weeklyGoalQuestions: Math.round(14 * 7), // 98 questões/semana (fórmula oficial 7q/h)
     cyclesCompleted: 0,
@@ -285,7 +224,7 @@ export function createInitialAppState() {
   const creaPlan = buildCreaMtSeedPlan();
 
   return {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     activeProfile: 'lucas',
     profiles: {
       lucas: { name: 'Lucas', color: '#10b981' },
@@ -299,14 +238,14 @@ export function createInitialAppState() {
     reminders: [
       {
         id: 'rem_1',
-        title: 'Inscrições Concurso Câmara de Cuiabá (até 30/11)',
+        title: 'Inscrições Concurso Câmara de Cuiabá (www.selecon.org.br)',
         date: '2026-11-30',
         done: false
       },
       {
         id: 'rem_2',
-        title: 'Prova Objetiva CMC Técnico Legislativo',
-        date: '2026-12-13',
+        title: 'Prova Objetiva e Discursiva CMC (Retificação Nº 01/2026)',
+        date: '2026-12-20',
         done: false
       }
     ],
@@ -331,6 +270,38 @@ export function loadAppState() {
     if (!parsed || !Array.isArray(parsed.plans) || !parsed.plans.length) {
       return createInitialAppState();
     }
+
+    // Migração automática para o Edital Nº 001/2026-CMC Oficial Retificado (v3)
+    if (parsed.version !== CURRENT_SCHEMA_VERSION) {
+      const freshCmcPlan = buildCmc2026SeedPlan();
+      const hasCmc = parsed.plans.some(p => p.id === 'plan_cmc_2026');
+      const migratedPlans = hasCmc
+        ? parsed.plans.map(p => (p.id === 'plan_cmc_2026' ? freshCmcPlan : p))
+        : [freshCmcPlan, ...parsed.plans];
+
+      const migratedState = {
+        ...parsed,
+        version: CURRENT_SCHEMA_VERSION,
+        plans: migratedPlans,
+        reminders: [
+          {
+            id: 'rem_1',
+            title: 'Inscrições Concurso Câmara de Cuiabá (www.selecon.org.br)',
+            date: '2026-11-30',
+            done: false
+          },
+          {
+            id: 'rem_2',
+            title: 'Prova Objetiva e Discursiva CMC (Retificação Nº 01/2026)',
+            date: '2026-12-20',
+            done: false
+          }
+        ]
+      };
+      saveAppState(migratedState);
+      return migratedState;
+    }
+
     return parsed;
   } catch (e) {
     console.error('Erro ao ler estado local:', e);

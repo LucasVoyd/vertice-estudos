@@ -1,5 +1,5 @@
-// Edital Verticalizado com Cascata Pai-Filho (_cascadeLocal), Prévia de Tópicos/Subtópicos,
-// Colagem Rápida de Edital e Pílula Teórica + Questões Selecon Integradas
+// Edital Verticalizado 100% Fiel ao Anexo V do Edital Nº 001/2026-CMC (Retificado em 04/11/2026)
+// Com Cascata Pai-Filho (_cascadeLocal), Seletor Rápido de Domínio/Peso, Colagem de Edital e Pílula Teórica + Questões Selecon
 import React, { useState } from 'react';
 import {
   ChevronDown,
@@ -7,18 +7,25 @@ import {
   CheckCircle2,
   ClipboardPaste,
   BookOpen,
-  HelpCircle,
   Play,
-  Plus,
   Sparkles,
   X
 } from 'lucide-react';
 import { PasteEditalModal } from './EditalWizardModal';
+import { getKnowledgeBadge } from './CycleTab';
+
+function formatHoursMins(mins) {
+  const m = Math.max(0, Math.round(mins || 0));
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return `${h}h${rem.toString().padStart(2, '0')}min`;
+}
 
 export default function EditalVerticalTab({
   plan,
   onToggleTopicCascade,
   onPasteTopicsIntoSubject,
+  onQuickChangeSubjectKnowledge,
   onOpenStudyForTopic
 }) {
   const [selectedSubjectId, setSelectedSubjectId] = useState(null);
@@ -34,6 +41,15 @@ export default function EditalVerticalTab({
   const totalTopics = allTopics.length;
   const doneTopics = allTopics.filter(t => t.finished).length;
   const totalPct = totalTopics > 0 ? Math.round((doneTopics / totalTopics) * 100) : 0;
+
+  // Calcula quantos minutos cada disciplina recebe no ciclo atual
+  const cycleMinsBySubject = new Map();
+  (plan.cycle || []).forEach(c => {
+    cycleMinsBySubject.set(
+      c.subjectId,
+      (cycleMinsBySubject.get(c.subjectId) || 0) + (c.duration || 0)
+    );
+  });
 
   const activeSubject = subjects.find(s => s.id === selectedSubjectId) || null;
 
@@ -51,8 +67,13 @@ export default function EditalVerticalTab({
 
   return (
     <div className="space-y-4 pb-24">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-extrabold text-emerald-400">Edital Verticalizado</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-xl font-extrabold text-emerald-400">Edital Verticalizado</h2>
+          <p className="text-xs text-slate-400">
+            Anexo V Oficial Consolidado com a Retificação Nº 01/2026 (Prova: 20/12/2026)
+          </p>
+        </div>
         {activeSubject && (
           <button
             type="button"
@@ -64,66 +85,159 @@ export default function EditalVerticalTab({
         )}
       </div>
 
-      {/* Card Progresso no Edital */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-[#2c3148] border border-slate-700/60 text-center space-y-2">
-        <h3 className="text-sm font-bold text-white">Progresso no Edital</h3>
-        <p className="text-xs text-slate-300">
-          {doneTopics} de {totalTopics} tópicos - <strong>{totalPct}%</strong>
-        </p>
-        <div className="w-full h-3.5 bg-[#1e2235] rounded-full overflow-hidden">
-          <div
-            className="h-full bg-emerald-400 transition-all"
-            style={{ width: `${totalPct}%` }}
-          />
+      {/* Card Progresso no Edital + Quadro Oficial de Pontos */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-[#2c3148] border border-slate-700/60 space-y-3">
+        <div className="text-center space-y-1.5">
+          <h3 className="text-sm font-bold text-white">Progresso no Edital</h3>
+          <p className="text-xs text-slate-300">
+            {doneTopics} de {totalTopics} tópicos e subtópicos — <strong>{totalPct}%</strong>
+          </p>
+          <div className="w-full h-3.5 bg-[#1e2235] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-emerald-400 transition-all"
+              style={{ width: `${totalPct}%` }}
+            />
+          </div>
         </div>
+
+        {/* Quadro Resumo de Pesos do Edital (Item 9.1.3) */}
+        {plan.id === 'plan_cmc_2026' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-700/60 text-left">
+            <div className="p-2.5 rounded-xl bg-[#22263a] border border-slate-700/60">
+              <span className="text-[10px] font-bold uppercase text-sky-400 block">
+                Conhecimentos Básicos
+              </span>
+              <span className="text-xs font-bold text-white block">
+                15 questões × 1,00 pt = 15 pts
+              </span>
+              <span className="text-[10px] text-slate-400">
+                Português, RLM, Informática e Legislação
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-[#22263a] border border-slate-700/60">
+              <span className="text-[10px] font-bold uppercase text-amber-400 block">
+                Conhecimentos Gerais
+              </span>
+              <span className="text-xs font-bold text-white block">
+                15 questões × 1,00 pt = 15 pts
+              </span>
+              <span className="text-[10px] text-slate-400">
+                História/Geo MT, Ética/Filosofia e Relações
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
+              <span className="text-[10px] font-bold uppercase text-rose-300 block">
+                Conhecimentos Específicos (70%)
+              </span>
+              <span className="text-xs font-extrabold text-white block">
+                40 questões × 1,75 pt = 70 pts
+              </span>
+              <span className="text-[10px] text-rose-200/80">
+                + Prova Discursiva (100 pts • 20 a 30 linhas)
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {!activeSubject ? (
         <>
-          <h3 className="text-base font-bold text-white pt-1">Disciplinas</h3>
+          <div className="flex items-center justify-between pt-1">
+            <h3 className="text-base font-bold text-white">Disciplinas ({subjects.length})</h3>
+            <span className="text-[11px] text-slate-400">
+              Clique em <strong>🔥 Foco</strong> / <strong>👀 Só olhada</strong> para ajustar seu tempo no ciclo
+            </span>
+          </div>
+
           <div className="space-y-3">
             {subjects.map(subj => {
               const sTopics = subj.topics || [];
+              const rootTopics = sTopics.filter(t => t.depth === 0);
+              const subTopicsCount = sTopics.filter(t => t.depth > 0).length;
               const sDone = sTopics.filter(t => t.finished).length;
               const sPct = sTopics.length > 0 ? Math.round((sDone / sTopics.length) * 100) : 0;
               const qHit = sTopics.reduce((a, t) => a + (t.questionsHit || 0), 0);
               const qMiss = sTopics.reduce((a, t) => a + (t.questionsMiss || 0), 0);
               const qTotal = qHit + qMiss;
               const qPct = qTotal > 0 ? Math.round((qHit / qTotal) * 100) : 0;
+              const cycleMins = cycleMinsBySubject.get(subj.id) || 0;
+              const badge = getKnowledgeBadge(subj.knowledge);
 
               return (
                 <div
                   key={subj.id}
                   className="p-4 sm:p-5 rounded-2xl bg-[#2c3148] border border-slate-700/60 space-y-3"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: subj.color || '#10b981' }}
+                        />
                         {sPct === 100 && (
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                         )}
                         <h4 className="text-base font-extrabold text-white">{subj.name}</h4>
+                        {subj.area && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                            {subj.area}
+                          </span>
+                        )}
                       </div>
-                      <span className="text-xs text-slate-300 mt-0.5 block">
-                        {sTopics.length} Tópicos ({sDone} concluídos)
+                      <span className="text-xs text-slate-300 block">
+                        {rootTopics.length} tópicos principais
+                        {subTopicsCount > 0 ? ` + ${subTopicsCount} subtópicos` : ''} ({sDone}/{sTopics.length} concluídos) •{' '}
+                        <strong className="text-emerald-400">
+                          {formatHoursMins(cycleMins)} no ciclo
+                        </strong>
                       </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setPasteSubject(subj)}
-                      title="Colar tópicos do edital nesta disciplina"
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-600 hover:border-emerald-400 text-xs text-slate-200 hover:text-emerald-300 flex items-center gap-1.5"
-                    >
-                      <ClipboardPaste className="w-3.5 h-3.5" />
-                      + Tópicos
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* Seletor rápido de Domínio/Estratégia direto no card */}
+                      {onQuickChangeSubjectKnowledge && (
+                        <div className="flex items-center rounded-xl bg-[#1e2235] p-0.5 border border-slate-700">
+                          {[
+                            { val: 1.5, label: '🔥 Foco' },
+                            { val: 2.5, label: '⚖️ Médio' },
+                            { val: 3.5, label: '👀 Só olhada' }
+                          ].map(opt => {
+                            const isAct = Number(subj.knowledge || 1.5) === opt.val;
+                            return (
+                              <button
+                                key={opt.val}
+                                type="button"
+                                onClick={() => onQuickChangeSubjectKnowledge(subj.id, opt.val)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                                  isAct
+                                    ? 'bg-emerald-500 text-slate-950'
+                                    : 'text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setPasteSubject(subj)}
+                        title="Colar tópicos do edital nesta disciplina"
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-600 hover:border-emerald-400 text-xs text-slate-200 hover:text-emerald-300 flex items-center gap-1"
+                      >
+                        <ClipboardPaste className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">+ Tópicos</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between gap-4 pt-1">
                     <div className="text-xs space-y-1">
                       <span className="text-slate-400 uppercase font-bold block text-[10px]">
-                        TOTAL DE QUESTÕES: {qTotal}
+                        TOTAL DE QUESTÕES: {qTotal} • {badge.label}
                       </span>
                       <div className="flex items-center gap-2.5">
                         <span className="text-emerald-400 font-bold">✓ {qHit}</span>
@@ -156,7 +270,8 @@ export default function EditalVerticalTab({
                       onClick={() => setSelectedSubjectId(subj.id)}
                       className="text-xs font-bold text-slate-200 hover:text-emerald-400 uppercase tracking-wider inline-flex items-center gap-1"
                     >
-                      VER TÓPICOS <span className="text-emerald-400">→</span>
+                      VER TÓPICOS E SUBTÓPICOS OFICIAIS ({sTopics.length}){' '}
+                      <span className="text-emerald-400">→</span>
                     </button>
                   </div>
                 </div>
@@ -212,7 +327,6 @@ export default function EditalVerticalTab({
               const children = (activeSubject.topics || []).filter(
                 c => c.parentId === topic.id
               );
-              // Se for subtópico, verifica se o pai está expandido (padrão: expandido)
               if (topic.parentId && expandedParents[topic.parentId] === false) {
                 return null;
               }

@@ -272,13 +272,16 @@ export function calculateSubjectWeight(knowledge = 1.5, importance = 2.5) {
 
 /**
  * Gera os blocos do Ciclo de Estudos (Roda + Sequência) distribuindo o tempo semanal proporcionalmente aos pesos
- * e intercalando as disciplinas em blocos de 30 a 90 minutos.
+ * (WeightSubject: 2^(-knowledge) * importance), garantindo soma exata da meta de horas e intercalação sem repetição seguida.
  */
-export function generateStudyCycle(subjects, totalCycleHours = 12) {
+export function generateStudyCycle(subjects, totalCycleHours = 14) {
   const active = (subjects || []).filter(s => s && s.includeInCycle !== false);
   if (!active.length) return [];
 
-  const totalMinutes = Math.max(60, Math.round(Number(totalCycleHours) * 60));
+  // Arredonda a meta total para múltiplos de 30 min (mínimo 30 min por disciplina ativa)
+  const rawTotalMinutes = Math.max(active.length * 30, Math.round(Number(totalCycleHours) * 60));
+  const totalSlots30 = Math.max(active.length, Math.round(rawTotalMinutes / 30));
+
   const withWeights = active.map(s => {
     const wAbs = calculateSubjectWeight(s.knowledge ?? 1.5, s.importance ?? 2.5);
     return { ...s, weightAbsolute: wAbs };
@@ -286,13 +289,48 @@ export function generateStudyCycle(subjects, totalCycleHours = 12) {
 
   const sumWeights = withWeights.reduce((acc, s) => acc + s.weightAbsolute, 0) || 1;
 
-  // Aloca minutos por disciplina (arredondado em múltiplos de 30 min, mínimo 30 min)
-  const buckets = withWeights.map(s => {
-    const rawMins = (s.weightAbsolute / sumWeights) * totalMinutes;
-    const rounded = Math.max(30, Math.round(rawMins / 30) * 30);
-    // Quebra em sessões de 30 min ou 60 min
+  // Cada disciplina ativa no ciclo recebe pelo menos 1 slot de 30 min ("olhada rápida / manutenção").
+  // Os slots restantes são distribuídos proporcionalmente pelo Método dos Maiores Restos (Largest Remainder Method)
+  // apenas entre as disciplinas cujo peso proporcional supera o piso de 1 slot.
+  const exactSlots = withWeights.map(s => (s.weightAbsolute / sumWeights) * totalSlots30);
+  const allocatedSlots = exactSlots.map(v => Math.max(1, Math.floor(v)));
+
+  let currentSum = allocatedSlots.reduce((a, b) => a + b, 0);
+
+  if (currentSum < totalSlots30) {
+    // Distribui slots faltantes para as disciplinas com maiores frações residuais
+    const remainders = exactSlots
+      .map((val, idx) => ({ idx, rem: val - allocatedSlots[idx], weight: withWeights[idx].weightAbsolute }))
+      .sort((a, b) => b.rem - a.rem || b.weight - a.weight);
+
+    let rIdx = 0;
+    while (currentSum < totalSlots30) {
+      allocatedSlots[remainders[rIdx % remainders.length].idx] += 1;
+      currentSum += 1;
+      rIdx += 1;
+    }
+  } else if (currentSum > totalSlots30) {
+    // Caso o piso de 1 slot em várias disciplinas tenha ultrapassado o total, reduz das que têm mais de 1 slot
+    while (currentSum > totalSlots30) {
+      let maxIdx = -1;
+      let maxVal = 1;
+      for (let i = 0; i < allocatedSlots.length; i++) {
+        if (allocatedSlots[i] > maxVal) {
+          maxVal = allocatedSlots[i];
+          maxIdx = i;
+        }
+      }
+      if (maxIdx === -1) break;
+      allocatedSlots[maxIdx] -= 1;
+      currentSum -= 1;
+    }
+  }
+
+  // Converte os slots de 30 min em sessões de 60 min (para matérias de foco) e 30 min (para matérias de revisão rápida)
+  const buckets = withWeights.map((s, idx) => {
+    const totalMins = allocatedSlots[idx] * 30;
     const sessions = [];
-    let rem = rounded;
+    let rem = totalMins;
     while (rem > 0) {
       const slot = rem >= 60 ? 60 : 30;
       sessions.push(slot);
@@ -300,28 +338,51 @@ export function generateStudyCycle(subjects, totalCycleHours = 12) {
     }
     return {
       subject: s,
-      sessions
+      totalMinutes: totalMins,
+      totalSessions: sessions.length,
+      sessions: [...sessions]
     };
   });
 
-  // Intercala (Round-Robin) para não estudar a mesma matéria várias vezes seguidas
+  // Intercalação uniforme via Smooth Weighted Round-Robin (algoritmo Nginx):
+  // Espalha os blocos de "Conhecimentos Específicos" e "Legislação" uniformemente ao longo de todo o ciclo,
+  // intercalando-os com os blocos únicos de 30 min ("só dar uma olhada") de Básicos e Gerais.
+  const totalSessionsCount = buckets.reduce((acc, b) => acc + b.sessions.length, 0);
+  buckets.forEach((b, idx) => {
+    // Pequeno offset inicial escalonado para desempatar disciplinas de 1 bloco de forma espaçada
+    b.currentWeight = -idx * 0.15;
+  });
+
   const cycleItems = [];
-  let maxLen = Math.max(...buckets.map(b => b.sessions.length));
-  let seq = 1;
-  for (let i = 0; i < maxLen; i++) {
-    for (const b of buckets) {
-      if (i < b.sessions.length) {
-        cycleItems.push({
-          id: `cyc_${seq++}_${b.subject.id}`,
-          subjectId: b.subject.id,
-          subjectName: b.subject.name,
-          subjectColor: b.subject.color,
-          duration: b.sessions[i], // em minutos
-          durationStudied: 0,
-          suggestedTopic: null
-        });
-      }
-    }
+  let lastSubjectId = null;
+
+  for (let step = 0; step < totalSessionsCount; step++) {
+    const available = buckets.filter(b => b.sessions.length > 0);
+    if (!available.length) break;
+
+    available.forEach(b => {
+      b.currentWeight += b.totalSessions;
+    });
+
+    const nonRepeating = available.filter(b => b.subject.id !== lastSubjectId);
+    const pool = nonRepeating.length > 0 ? nonRepeating : available;
+
+    pool.sort((a, b) => b.currentWeight - a.currentWeight || b.sessions.length - a.sessions.length);
+
+    const chosen = pool[0];
+    chosen.currentWeight -= totalSessionsCount;
+    const duration = chosen.sessions.shift();
+    lastSubjectId = chosen.subject.id;
+
+    cycleItems.push({
+      id: `cyc_${step + 1}_${chosen.subject.id}`,
+      subjectId: chosen.subject.id,
+      subjectName: chosen.subject.name,
+      subjectColor: chosen.subject.color,
+      duration,
+      durationStudied: 0,
+      suggestedTopic: null
+    });
   }
 
   return cycleItems;

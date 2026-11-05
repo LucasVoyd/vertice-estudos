@@ -1,5 +1,5 @@
 // Menu "Ver mais" fiel ao print 14:
-// Revisões, Planos de Estudo, Disciplinas, Estatísticas, Histórico, Simulados, Lembretes, Conquistas + Nuvem Supabase (Probe de Latência)
+// Revisões, Planos de Estudo, Disciplinas, Estatísticas, Histórico Completo (com Anotações e Edição), Simulados, Lembretes, Conquistas + Nuvem Supabase
 import React, { useState } from 'react';
 import {
   RefreshCw,
@@ -15,9 +15,15 @@ import {
   Trash2,
   Check,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Download,
   Upload,
-  Activity
+  Activity,
+  Edit3,
+  FileText,
+  BookOpen,
+  Video
 } from 'lucide-react';
 import {
   getSupabaseConfig,
@@ -26,6 +32,8 @@ import {
   syncWithSupabase,
   SUPABASE_SETUP_SQL
 } from '../utils/appStore';
+import { getLocalDateIso, formatBrazilianDate } from '../utils/dateUtils';
+import EditStudyLogModal from './EditStudyLogModal';
 
 export default function MoreHubTab({
   state,
@@ -36,6 +44,7 @@ export default function MoreHubTab({
   onCompleteReview,
   onIgnoreReview,
   onAddSimulado,
+  onUpdateStudyLog,
   onDeleteStudyLog,
   onAddReminder,
   onToggleReminder,
@@ -43,6 +52,8 @@ export default function MoreHubTab({
 }) {
   const [section, setSection] = useState('menu'); // 'menu' | 'revisoes' | 'planos' | 'estatisticas' | 'historico' | 'simulados' | 'lembretes' | 'conquistas' | 'nuvem'
   const [revFilter, setRevFilter] = useState('programadas'); // 'programadas' | 'atrasadas' | 'ignoradas'
+  const [editingLog, setEditingLog] = useState(null);
+  const [expandedLogIds, setExpandedLogIds] = useState({});
 
   // Estado Simulado
   const [simTitle, setSimTitle] = useState('');
@@ -51,7 +62,7 @@ export default function MoreHubTab({
 
   // Estado Lembrete
   const [remTitle, setRemTitle] = useState('');
-  const [remDate, setRemDate] = useState(new Date().toISOString().split('T')[0]);
+  const [remDate, setRemDate] = useState(() => getLocalDateIso(new Date()));
 
   // Estado Supabase
   const [sbCfg, setSbCfg] = useState(() => getSupabaseConfig());
@@ -60,7 +71,7 @@ export default function MoreHubTab({
 
   if (!plan) return null;
 
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = getLocalDateIso(new Date());
   const planReviews = (state.reviews || []).filter(r => r.planId === plan.id);
   const delayedReviews = planReviews.filter(r => !r.done && !r.ignored && r.dueDate < todayIso);
   const scheduledReviews = planReviews.filter(r => !r.done && !r.ignored && r.dueDate >= todayIso);
@@ -537,40 +548,235 @@ export default function MoreHubTab({
         </div>
       )}
 
-      {/* SEÇÃO: HISTÓRICO DE SESSÕES */}
+      {/* SEÇÃO: HISTÓRICO DE SESSÕES COM DETALHES, ANOTAÇÕES E EDIÇÃO */}
       {section === 'historico' && (
         <div className="space-y-4">
-          <h2 className="text-xl font-extrabold text-emerald-400">Histórico de Estudos</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-extrabold text-emerald-400">Histórico de Estudos</h2>
+            <span className="text-xs text-slate-400">
+              {(state.studyLogs || []).filter(l => l.planId === plan.id).length} sessões registradas
+            </span>
+          </div>
+
           {(state.studyLogs || []).filter(l => l.planId === plan.id).length === 0 ? (
-            <p className="text-sm text-slate-400">Nenhum estudo registrado ainda.</p>
+            <div className="p-8 rounded-2xl bg-[#2c3148] border border-slate-700/60 text-center space-y-2">
+              <History className="w-10 h-10 text-slate-500 mx-auto" />
+              <p className="text-sm font-bold text-white">Nenhum estudo registrado ainda.</p>
+              <p className="text-xs text-slate-400">
+                Seus estudos salvos pelo cronômetro ou formulário aparecerão aqui com anotações e detalhes completos.
+              </p>
+            </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               {(state.studyLogs || [])
                 .filter(l => l.planId === plan.id)
-                .map(log => (
-                  <div
-                    key={log.id}
-                    className="p-3.5 rounded-xl bg-[#2c3148] border border-slate-700/60 flex items-center justify-between gap-2"
-                  >
-                    <div>
-                      <span className="text-xs font-bold text-emerald-400">
-                        {log.date} • {log.category} • {log.durationMinutes} min
-                      </span>
-                      <h4 className="font-bold text-white text-sm">{log.subjectName}</h4>
-                      {log.topicName && (
-                        <p className="text-xs text-slate-300">{log.topicName}</p>
+                .map(log => {
+                  const isExpanded = expandedLogIds[log.id] !== false; // padrão: aberto
+                  const totalQuestions = (Number(log.questionsHit) || 0) + (Number(log.questionsMiss) || 0);
+                  const qPct = totalQuestions > 0 ? Math.round(((Number(log.questionsHit) || 0) / totalQuestions) * 100) : 0;
+                  const hours = Math.floor((log.durationMinutes || 0) / 60);
+                  const mins = (log.durationMinutes || 0) % 60;
+                  const timeFormatted = hours > 0 ? `${hours}h${mins.toString().padStart(2, '0')}min` : `${mins} min`;
+
+                  // Suporte a tópicos múltiplos ou únicos
+                  const topicList = Array.isArray(log.topicNames) && log.topicNames.length > 0
+                    ? log.topicNames
+                    : log.topicName
+                    ? log.topicName.split(',').map(s => s.trim())
+                    : [];
+
+                  return (
+                    <div
+                      key={log.id}
+                      className="rounded-2xl bg-[#2c3148] border border-slate-700/70 overflow-hidden shadow-lg transition-all"
+                    >
+                      {/* Cabeçalho da Sessão */}
+                      <div className="p-4 flex flex-wrap items-start justify-between gap-3 border-b border-slate-700/50">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className="w-3 h-3 rounded-full shrink-0"
+                              style={{ backgroundColor: log.subjectColor || '#10b981' }}
+                            />
+                            <h4 className="font-extrabold text-white text-base">
+                              {log.subjectName}
+                            </h4>
+                            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                              {log.category || 'Teoria'}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                            <span className="font-mono text-emerald-400 font-bold">
+                              📅 {formatBrazilianDate(log.date)}
+                            </span>
+                            <span>•</span>
+                            <span className="font-bold text-white">
+                              ⏱️ {timeFormatted}
+                            </span>
+                            {totalQuestions > 0 && (
+                              <>
+                                <span>•</span>
+                                <span className="text-emerald-300 font-bold">
+                                  ✓ {log.questionsHit}
+                                </span>
+                                <span className="text-rose-400 font-bold">
+                                  ✗ {log.questionsMiss}
+                                </span>
+                                <span className="text-[11px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                                  {qPct}%
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Botões de Ação: Editar e Excluir */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingLog(log)}
+                            className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-emerald-300 flex items-center gap-1 border border-slate-600 transition-colors"
+                            title="Editar sessão de estudo"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Editar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Excluir o registro de estudo de ${log.subjectName} (${log.date})?`)) {
+                                onDeleteStudyLog(log.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-xl hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
+                            title="Excluir registro"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedLogIds(prev => ({ ...prev, [log.id]: !isExpanded }))
+                            }
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-white"
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Corpo Detalhado Expansível */}
+                      {isExpanded && (
+                        <div className="p-4 space-y-3 bg-[#24283c]">
+                          {/* Tópicos e Subtópicos Estudados */}
+                          {topicList.length > 0 && (
+                            <div>
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
+                                Tópicos / Subtópicos Estudados:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {topicList.map((tName, tIdx) => (
+                                  <span
+                                    key={tIdx}
+                                    className="px-2 py-1 rounded-lg bg-[#181b2c] border border-slate-700 text-xs text-slate-200"
+                                  >
+                                    • {tName}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Metadados: Material, Páginas, Vídeo */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                            {log.material && (
+                              <div className="p-2.5 rounded-xl bg-[#1e2235] border border-slate-800">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                                  Material
+                                </span>
+                                <span className="text-slate-200 font-medium">{log.material}</span>
+                              </div>
+                            )}
+
+                            {(log.pageStart > 0 || log.pageEnd > 0) && (
+                              <div className="p-2.5 rounded-xl bg-[#1e2235] border border-slate-800">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                                  Páginas Lidas
+                                </span>
+                                <span className="text-slate-200 font-medium">
+                                  Págs. {log.pageStart} a {log.pageEnd} (
+                                  {Math.max(1, (Number(log.pageEnd) || 0) - (Number(log.pageStart) || 0) + 1)} págs.)
+                                </span>
+                              </div>
+                            )}
+
+                            {(log.videoTitle || (log.videoStart && log.videoStart !== '00:00:00')) && (
+                              <div className="p-2.5 rounded-xl bg-[#1e2235] border border-slate-800">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                                  Videoaula
+                                </span>
+                                <span className="text-slate-200 font-medium truncate block">
+                                  {log.videoTitle || 'Vídeo'} ({log.videoStart || '00:00:00'} - {log.videoEnd || '00:00:00'})
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* ANOTAÇÕES / OBSERVAÇÕES DA SESSÃO */}
+                          {log.comments ? (
+                            <div className="p-3.5 rounded-xl bg-[#181b2c] border border-amber-500/30 space-y-1">
+                              <span className="text-[11px] font-bold uppercase text-amber-300 flex items-center gap-1.5">
+                                <FileText className="w-3.5 h-3.5" />
+                                Anotações e Observações da Sessão:
+                              </span>
+                              <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-line leading-relaxed font-sans">
+                                {log.comments}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-500 italic">
+                              Nenhuma observação anotada nesta sessão.{' '}
+                              <button
+                                type="button"
+                                onClick={() => setEditingLog(log)}
+                                className="text-emerald-400 hover:underline not-italic font-bold ml-1"
+                              >
+                                + Adicionar anotações
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteStudyLog(log.id)}
-                      className="p-2 text-slate-400 hover:text-rose-400"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
+          )}
+
+          {/* Modal de Edição de Sessão de Estudo */}
+          {editingLog && (
+            <EditStudyLogModal
+              log={editingLog}
+              plan={plan}
+              onSave={(updatedLog, origLog) => {
+                if (onUpdateStudyLog) {
+                  onUpdateStudyLog(updatedLog, origLog);
+                }
+                setEditingLog(null);
+              }}
+              onDelete={logId => {
+                onDeleteStudyLog(logId);
+                setEditingLog(null);
+              }}
+              onClose={() => setEditingLog(null)}
+            />
           )}
         </div>
       )}

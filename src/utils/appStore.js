@@ -2,10 +2,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { buildOfficialTecnicoLegislativoSubjects } from '../data/editalCmc2026Oficial.js';
 import { calculateSubjectWeight, generateStudyCycle } from './editalParser.js';
+import { getLocalDateIso } from './dateUtils.js';
 
 const STORAGE_KEY = 'vertice_estudos_state_v1';
 const SUPABASE_CFG_KEY = 'vertice_supabase_cfg_v1';
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export const SUBJECT_COLORS = [
   '#10b981', // Emerald
@@ -271,7 +272,36 @@ export function loadAppState() {
       return createInitialAppState();
     }
 
-    // Migração automática para o Edital Nº 001/2026-CMC Oficial Retificado (v3)
+    let changed = false;
+
+    // Sanitização e normalização de sessões de estudo (Anti-UTC Offset + Multi-tópicos)
+    const sanitizedLogs = (parsed.studyLogs || []).map(log => {
+      let updatedLog = { ...log };
+      // 1. Garante topicIds como array
+      if (!Array.isArray(updatedLog.topicIds)) {
+        updatedLog.topicIds = updatedLog.topicId ? [updatedLog.topicId] : [];
+        changed = true;
+      }
+      if (!Array.isArray(updatedLog.topicNames)) {
+        updatedLog.topicNames = updatedLog.topicName ? [updatedLog.topicName] : [];
+        changed = true;
+      }
+      // 2. Corrige data se foi gravada com UTC offset adiantado
+      const todayIso = getLocalDateIso();
+      if (updatedLog.date && updatedLog.date > todayIso && updatedLog.id?.startsWith('log_')) {
+        const ms = Number(updatedLog.id.replace('log_', ''));
+        if (!isNaN(ms) && ms > 0) {
+          const realLocalDate = getLocalDateIso(new Date(ms));
+          if (realLocalDate && realLocalDate !== updatedLog.date) {
+            updatedLog.date = realLocalDate;
+            changed = true;
+          }
+        }
+      }
+      return updatedLog;
+    });
+
+    // Migração automática para o Edital Nº 001/2026-CMC Oficial Retificado (v4)
     if (parsed.version !== CURRENT_SCHEMA_VERSION) {
       const freshCmcPlan = buildCmc2026SeedPlan();
       const hasCmc = parsed.plans.some(p => p.id === 'plan_cmc_2026');
@@ -283,6 +313,7 @@ export function loadAppState() {
         ...parsed,
         version: CURRENT_SCHEMA_VERSION,
         plans: migratedPlans,
+        studyLogs: sanitizedLogs,
         reminders: [
           {
             id: 'rem_1',
@@ -300,6 +331,12 @@ export function loadAppState() {
       };
       saveAppState(migratedState);
       return migratedState;
+    }
+
+    if (changed) {
+      const updatedState = { ...parsed, studyLogs: sanitizedLogs };
+      saveAppState(updatedState);
+      return updatedState;
     }
 
     return parsed;

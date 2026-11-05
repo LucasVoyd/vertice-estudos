@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { loadAppState, saveAppState } from './utils/appStore';
 import { linesToTopicsTree, generateStudyCycle, calculateSubjectWeight } from './utils/editalParser';
+import { getLocalDateIso } from './utils/dateUtils';
 import {
   loadPersistentTimer,
   savePersistentTimer,
@@ -275,15 +276,29 @@ export default function App() {
     });
   };
 
-  // Salvar sessão de estudo (Cronômetro ou Manual) + Atualizar Ciclo, Tópico e Agendar Revisões (1, 7, 15, 30 dias)
+  // Salvar sessão de estudo (Cronômetro ou Manual) + Atualizar Ciclo, Múltiplos Tópicos e Agendar Revisões
   const handleSaveStudySession = session => {
     setState(prev => {
       const logId = `log_${Date.now()}`;
+      const targetTopicIds =
+        session.topicIds && session.topicIds.length > 0
+          ? session.topicIds
+          : session.topicId
+          ? [session.topicId]
+          : [];
+      const numTopics = Math.max(1, targetTopicIds.length);
+
+      const durationPerTopic = Math.round((session.durationMinutes || 0) / numTopics);
+      const hitPerTopic = Math.round((session.questionsHit || 0) / numTopics);
+      const missPerTopic = Math.round((session.questionsMiss || 0) / numTopics);
+
       const newLog = {
         id: logId,
         planId: currentPlan.id,
         profile: prev.activeProfile,
-        ...session
+        ...session,
+        topicIds: targetTopicIds,
+        topicNames: session.topicNames || (session.topicName ? [session.topicName] : [])
       };
 
       const updatedPlans = (prev.plans || []).map(plan => {
@@ -292,13 +307,15 @@ export default function App() {
         const subjects = (plan.subjects || []).map(subj => {
           if (subj.id !== session.subjectId) return subj;
           const topics = (subj.topics || []).map(top => {
-            if (top.id !== session.topicId) return top;
+            if (!targetTopicIds.includes(top.id)) return top;
             return {
               ...top,
-              questionsHit: (top.questionsHit || 0) + (session.questionsHit || 0),
-              questionsMiss: (top.questionsMiss || 0) + (session.questionsMiss || 0),
-              studiedMinutes: (top.studiedMinutes || 0) + (session.durationMinutes || 0),
-              lastStudiedAt: session.date
+              questionsHit: (top.questionsHit || 0) + hitPerTopic,
+              questionsMiss: (top.questionsMiss || 0) + missPerTopic,
+              studiedMinutes: (top.studiedMinutes || 0) + durationPerTopic,
+              lastStudiedAt: session.date || getLocalDateIso(),
+              finished: session.markTopicsFinished ? true : top.finished,
+              finishedAt: session.markTopicsFinished ? (top.finishedAt || new Date().toISOString()) : top.finishedAt
             };
           });
           return { ...subj, topics };
@@ -345,21 +362,25 @@ export default function App() {
       let newReviews = [...(prev.reviews || [])];
       if (session.scheduleReviews) {
         const intervals = prev.preferences?.studyReviewDays || [1, 7, 15, 30];
-        const baseDate = new Date((session.date || new Date().toISOString().split('T')[0]) + 'T12:00:00');
-        intervals.forEach(days => {
-          const d = new Date(baseDate);
-          d.setDate(d.getDate() + Number(days));
-          newReviews.push({
-            id: `rev_${Date.now()}_${days}_${Math.random().toString(36).slice(2, 5)}`,
-            planId: currentPlan.id,
-            subjectId: session.subjectId,
-            subjectName: session.subjectName,
-            topicId: session.topicId,
-            topicName: session.topicName,
-            intervalDays: days,
-            dueDate: d.toISOString().split('T')[0],
-            done: false,
-            ignored: false
+        const baseDate = new Date((session.date || getLocalDateIso()) + 'T12:00:00');
+        targetTopicIds.forEach(tid => {
+          const tIndex = targetTopicIds.indexOf(tid);
+          const tName = session.topicNames?.[tIndex] || session.topicName || 'Tópico';
+          intervals.forEach(days => {
+            const d = new Date(baseDate);
+            d.setDate(d.getDate() + Number(days));
+            newReviews.push({
+              id: `rev_${Date.now()}_${tid}_${days}_${Math.random().toString(36).slice(2, 5)}`,
+              planId: currentPlan.id,
+              subjectId: session.subjectId,
+              subjectName: session.subjectName,
+              topicId: tid,
+              topicName: tName,
+              intervalDays: days,
+              dueDate: getLocalDateIso(d),
+              done: false,
+              ignored: false
+            });
           });
         });
       }
@@ -369,6 +390,140 @@ export default function App() {
         plans: updatedPlans,
         studyLogs: [newLog, ...(prev.studyLogs || [])],
         reviews: newReviews
+      };
+    });
+  };
+
+  // Atualizar sessão de estudo existente (com reconciliação de horas e acertos nos tópicos)
+  const handleUpdateStudyLog = (updatedLog, originalLog) => {
+    setState(prev => {
+      const updatedLogs = (prev.studyLogs || []).map(l =>
+        l.id === updatedLog.id ? updatedLog : l
+      );
+
+      const planId = updatedLog.planId || currentPlan.id;
+      const origTopicIds =
+        originalLog.topicIds && originalLog.topicIds.length > 0
+          ? originalLog.topicIds
+          : originalLog.topicId
+          ? [originalLog.topicId]
+          : [];
+      const origNum = Math.max(1, origTopicIds.length);
+      const origDurationPer = Math.round((originalLog.durationMinutes || 0) / origNum);
+      const origHitPer = Math.round((originalLog.questionsHit || 0) / origNum);
+      const origMissPer = Math.round((originalLog.questionsMiss || 0) / origNum);
+
+      const newTopicIds =
+        updatedLog.topicIds && updatedLog.topicIds.length > 0
+          ? updatedLog.topicIds
+          : updatedLog.topicId
+          ? [updatedLog.topicId]
+          : [];
+      const newNum = Math.max(1, newTopicIds.length);
+      const newDurationPer = Math.round((updatedLog.durationMinutes || 0) / newNum);
+      const newHitPer = Math.round((updatedLog.questionsHit || 0) / newNum);
+      const newMissPer = Math.round((updatedLog.questionsMiss || 0) / newNum);
+
+      const updatedPlans = (prev.plans || []).map(plan => {
+        if (plan.id !== planId) return plan;
+
+        const subjects = (plan.subjects || []).map(subj => {
+          let modified = false;
+          const topics = (subj.topics || []).map(top => {
+            let studiedMinutes = top.studiedMinutes || 0;
+            let questionsHit = top.questionsHit || 0;
+            let questionsMiss = top.questionsMiss || 0;
+            let wasTouched = false;
+
+            // Remove impacto anterior se pertencia a essa disciplina e tópico
+            if (subj.id === originalLog.subjectId && origTopicIds.includes(top.id)) {
+              studiedMinutes = Math.max(0, studiedMinutes - origDurationPer);
+              questionsHit = Math.max(0, questionsHit - origHitPer);
+              questionsMiss = Math.max(0, questionsMiss - origMissPer);
+              wasTouched = true;
+            }
+
+            // Aplica novo impacto se pertence a essa disciplina e tópico
+            if (subj.id === updatedLog.subjectId && newTopicIds.includes(top.id)) {
+              studiedMinutes += newDurationPer;
+              questionsHit += newHitPer;
+              questionsMiss += newMissPer;
+              wasTouched = true;
+            }
+
+            if (wasTouched) {
+              modified = true;
+              return {
+                ...top,
+                studiedMinutes,
+                questionsHit,
+                questionsMiss,
+                lastStudiedAt: updatedLog.date
+              };
+            }
+            return top;
+          });
+
+          return modified ? { ...subj, topics } : subj;
+        });
+
+        return { ...plan, subjects };
+      });
+
+      return {
+        ...prev,
+        plans: updatedPlans,
+        studyLogs: updatedLogs
+      };
+    });
+  };
+
+  // Excluir sessão de estudo e abater horas/questões dos tópicos correspondentes
+  const handleDeleteStudyLog = logId => {
+    setState(prev => {
+      const targetLog = (prev.studyLogs || []).find(l => l.id === logId);
+      const restLogs = (prev.studyLogs || []).filter(l => l.id !== logId);
+
+      if (!targetLog) {
+        return { ...prev, studyLogs: restLogs };
+      }
+
+      const planId = targetLog.planId || currentPlan.id;
+      const topicIds =
+        targetLog.topicIds && targetLog.topicIds.length > 0
+          ? targetLog.topicIds
+          : targetLog.topicId
+          ? [targetLog.topicId]
+          : [];
+      const numTopics = Math.max(1, topicIds.length);
+      const durationPer = Math.round((targetLog.durationMinutes || 0) / numTopics);
+      const hitPer = Math.round((targetLog.questionsHit || 0) / numTopics);
+      const missPer = Math.round((targetLog.questionsMiss || 0) / numTopics);
+
+      const updatedPlans = (prev.plans || []).map(plan => {
+        if (plan.id !== planId) return plan;
+
+        const subjects = (plan.subjects || []).map(subj => {
+          if (subj.id !== targetLog.subjectId) return subj;
+          const topics = (subj.topics || []).map(top => {
+            if (!topicIds.includes(top.id)) return top;
+            return {
+              ...top,
+              studiedMinutes: Math.max(0, (top.studiedMinutes || 0) - durationPer),
+              questionsHit: Math.max(0, (top.questionsHit || 0) - hitPer),
+              questionsMiss: Math.max(0, (top.questionsMiss || 0) - missPer)
+            };
+          });
+          return { ...subj, topics };
+        });
+
+        return { ...plan, subjects };
+      });
+
+      return {
+        ...prev,
+        plans: updatedPlans,
+        studyLogs: restLogs
       };
     });
   };
@@ -589,12 +744,8 @@ export default function App() {
                 simulados: [sim, ...(prev.simulados || [])]
               }))
             }
-            onDeleteStudyLog={logId =>
-              setState(prev => ({
-                ...prev,
-                studyLogs: (prev.studyLogs || []).filter(l => l.id !== logId)
-              }))
-            }
+            onUpdateStudyLog={handleUpdateStudyLog}
+            onDeleteStudyLog={handleDeleteStudyLog}
             onAddReminder={rem =>
               setState(prev => ({
                 ...prev,

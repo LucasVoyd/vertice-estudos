@@ -11,7 +11,9 @@ import {
   Sparkles,
   Bell,
   ShieldCheck,
-  Sun
+  Sun,
+  X,
+  ListPlus
 } from 'lucide-react';
 import {
   formatHHMMSS,
@@ -19,6 +21,7 @@ import {
   getNotificationPermissionStatus,
   requestTimerNotificationPermission
 } from '../utils/persistentTimer';
+import { getLocalDateIso } from '../utils/dateUtils';
 
 function parseHHMMSSToMinutes(str) {
   const parts = (str || '00:00:00').split(':').map(n => parseInt(n, 10) || 0);
@@ -47,15 +50,17 @@ export default function StudyRegisterTab({
   const [subTab, setSubTab] = useState('cronometro'); // 'cronometro' | 'formulario'
   const [notifPerm, setNotifPerm] = useState(() => getNotificationPermissionStatus());
 
-  // Estado do formulário "Registrar Estudo"
-  const todayStr = new Date().toISOString().split('T')[0];
-  const [date, setDate] = useState(todayStr);
+  // Estado do formulário "Registrar Estudo" com data local correta
+  const [date, setDate] = useState(() => getLocalDateIso(new Date()));
   const [category, setCategory] = useState('Teoria'); // Teoria | Revisão | Questões
   const [subjectId, setSubjectId] = useState(timerState?.subjectId || '');
-  const [topicId, setTopicId] = useState(timerState?.topicId || '');
+  const [selectedTopicIds, setSelectedTopicIds] = useState(() =>
+    timerState?.topicId ? [timerState.topicId] : []
+  );
   const [cycleItemId, setCycleItemId] = useState(timerState?.cycleItemId || '');
   const [addToPlanning, setAddToPlanning] = useState(true);
   const [scheduleReviews, setScheduleReviews] = useState(true);
+  const [markTopicsFinished, setMarkTopicsFinished] = useState(false);
   const [material, setMaterial] = useState('');
   const [timeStr, setTimeStr] = useState('00:30:00');
   const [questionsHit, setQuestionsHit] = useState(0);
@@ -80,7 +85,7 @@ export default function StudyRegisterTab({
       const nextCycId = preselected.cycleItemId || '';
 
       if (preselected.subjectId) setSubjectId(preselected.subjectId);
-      if (preselected.topicId !== undefined) setTopicId(preselected.topicId);
+      if (preselected.topicId) setSelectedTopicIds([preselected.topicId]);
       if (preselected.cycleItemId !== undefined) setCycleItemId(preselected.cycleItemId);
       if (preselected.openForm) setSubTab('formulario');
 
@@ -117,6 +122,12 @@ export default function StudyRegisterTab({
   const currentSubject = subjects.find(s => s.id === subjectId) || subjects[0] || null;
   const availableTopics = currentSubject ? currentSubject.topics || [] : [];
 
+  const handleToggleTopic = tId => {
+    setSelectedTopicIds(prev =>
+      prev.includes(tId) ? prev.filter(id => id !== tId) : [...prev, tId]
+    );
+  };
+
   const transferTimerToForm = () => {
     if (running) {
       onToggleTimerPlayPause();
@@ -124,7 +135,9 @@ export default function StudyRegisterTab({
     const elapsedSecs = Math.max(60, snap.elapsedSeconds || snap.displaySeconds || 60);
     setTimeStr(formatHHMMSS(elapsedSecs));
     if (timerState?.subjectId) setSubjectId(timerState.subjectId);
-    if (timerState?.topicId) setTopicId(timerState.topicId);
+    if (timerState?.topicId && !selectedTopicIds.includes(timerState.topicId)) {
+      setSelectedTopicIds([timerState.topicId]);
+    }
     if (timerState?.cycleItemId) setCycleItemId(timerState.cycleItemId);
     setSubTab('formulario');
   };
@@ -138,7 +151,7 @@ export default function StudyRegisterTab({
     e.preventDefault();
     const durationMinutes = Math.max(1, parseHHMMSSToMinutes(timeStr));
     const subj = subjects.find(s => s.id === (subjectId || currentSubject?.id));
-    const top = (subj?.topics || []).find(t => t.id === topicId);
+    const chosenTopics = availableTopics.filter(t => selectedTopicIds.includes(t.id));
 
     onSaveStudySession({
       date,
@@ -146,8 +159,11 @@ export default function StudyRegisterTab({
       subjectId: subj?.id || '',
       subjectName: subj?.name || 'Geral',
       subjectColor: subj?.color || '#10b981',
-      topicId: top?.id || '',
-      topicName: top?.name || '',
+      topicIds: selectedTopicIds,
+      topicNames: chosenTopics.map(t => t.name),
+      topicId: selectedTopicIds[0] || '',
+      topicName: chosenTopics.map(t => t.name).join(', ') || 'Estudo Geral',
+      markTopicsFinished,
       cycleItemId,
       addToPlanning,
       scheduleReviews,
@@ -158,6 +174,8 @@ export default function StudyRegisterTab({
       pageStart: Number(pageStart) || 0,
       pageEnd: Number(pageEnd) || 0,
       videoTitle: videoTitle.trim(),
+      videoStart: videoStart.trim(),
+      videoEnd: videoEnd.trim(),
       comments: comments.trim()
     });
 
@@ -266,10 +284,10 @@ export default function StudyRegisterTab({
                 Tópico (Opcional)
               </span>
               <select
-                value={topicId}
+                value={selectedTopicIds[0] || ''}
                 onChange={e => {
                   const newTopId = e.target.value;
-                  setTopicId(newTopId);
+                  setSelectedTopicIds(newTopId ? [newTopId] : []);
                   const tObj = availableTopics.find(t => t.id === newTopId);
                   if (onSetTimerContext) {
                     onSetTimerContext({
@@ -539,7 +557,7 @@ export default function StudyRegisterTab({
               value={subjectId || currentSubject?.id || ''}
               onChange={e => {
                 setSubjectId(e.target.value);
-                setTopicId('');
+                setSelectedTopicIds([]);
               }}
               className="w-full bg-[#1e2235] border-b border-emerald-500/70 py-2 text-sm text-white focus:outline-none"
             >
@@ -551,22 +569,81 @@ export default function StudyRegisterTab({
             </select>
           </div>
 
+          {/* TÓPICOS E SUBTÓPICOS COM MÚLTIPLA SELEÇÃO */}
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-300 mb-1">
-              TÓPICO
-            </label>
-            <select
-              value={topicId}
-              onChange={e => setTopicId(e.target.value)}
-              className="w-full bg-[#1e2235] border-b border-emerald-500/70 py-2 text-sm text-white focus:outline-none"
-            >
-              <option value="">Selecione um tópico (opcional)</option>
-              {availableTopics.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.depth > 0 ? `${'  '.repeat(t.depth)}↳ ${t.name}` : t.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-bold uppercase text-slate-300 flex items-center gap-1.5">
+                <ListPlus className="w-3.5 h-3.5 text-emerald-400" />
+                Tópicos / Subtópicos ({selectedTopicIds.length} selecionados)
+              </label>
+              <div className="flex items-center gap-2">
+                {selectedTopicIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTopicIds([])}
+                    className="text-[10px] text-rose-400 hover:underline"
+                  >
+                    Limpar
+                  </button>
+                )}
+                <span className="text-[10px] text-slate-400">
+                  Marque 1 ou mais tópicos
+                </span>
+              </div>
+            </div>
+
+            {/* Chips de tópicos selecionados */}
+            {selectedTopicIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {availableTopics
+                  .filter(t => selectedTopicIds.includes(t.id))
+                  .map(t => (
+                    <span
+                      key={t.id}
+                      className="px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-1.5"
+                    >
+                      <span className="truncate max-w-[200px]">{t.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleTopic(t.id)}
+                        className="hover:text-rose-400"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+              </div>
+            )}
+
+            {/* Lista hierárquica de tópicos para marcar */}
+            <div className="max-h-48 overflow-y-auto rounded-xl bg-[#181b2c] border border-slate-700/80 p-2 space-y-1">
+              {availableTopics.length === 0 ? (
+                <p className="text-xs text-slate-400 p-2">Nenhum tópico cadastrado nesta matéria.</p>
+              ) : (
+                availableTopics.map(t => {
+                  const isChecked = selectedTopicIds.includes(t.id);
+                  return (
+                    <label
+                      key={t.id}
+                      style={{ paddingLeft: `${Math.min(t.depth || 0, 3) * 16 + 6}px` }}
+                      className={`flex items-center gap-2 p-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                        isChecked
+                          ? 'bg-emerald-950/40 text-emerald-200 border border-emerald-500/40'
+                          : 'text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleToggleTopic(t.id)}
+                        className="w-3.5 h-3.5 rounded accent-emerald-500 shrink-0"
+                      />
+                      <span className="truncate">{t.name}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           <div className="space-y-2.5 pt-1">
@@ -577,7 +654,7 @@ export default function StudyRegisterTab({
                 onChange={e => setAddToPlanning(e.target.checked)}
                 className="w-4 h-4 rounded accent-emerald-500"
               />
-              <span>Contabilizar no Planejamento</span>
+              <span>Contabilizar no Planejamento (Ciclo)</span>
             </label>
 
             <label className="flex items-center gap-2.5 text-sm text-white cursor-pointer">
@@ -588,6 +665,16 @@ export default function StudyRegisterTab({
                 className="w-4 h-4 rounded accent-emerald-500"
               />
               <span>Programar Revisões Automáticas (1, 7, 15, 30 dias)</span>
+            </label>
+
+            <label className="flex items-center gap-2.5 text-sm text-emerald-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={markTopicsFinished}
+                onChange={e => setMarkTopicsFinished(e.target.checked)}
+                className="w-4 h-4 rounded accent-emerald-500"
+              />
+              <span>Marcar tópicos selecionados como concluídos no Edital Verticalizado</span>
             </label>
           </div>
 

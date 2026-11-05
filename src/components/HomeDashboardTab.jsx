@@ -20,6 +20,7 @@ import {
   ArrowDown
 } from 'lucide-react';
 import { computeWeeklyGoalAlert } from '../utils/editalParser';
+import { getLocalDateIso, getCurrentWeekDays, getLastNDays } from '../utils/dateUtils';
 
 function formatHoursMins(mins) {
   const m = Math.max(0, Math.round(mins || 0));
@@ -47,18 +48,28 @@ export default function HomeDashboardTab({
   if (!plan) return null;
 
   const planLogs = (state.studyLogs || []).filter(l => l.planId === plan.id);
-  const totalStudiedMins = planLogs.reduce((a, l) => a + (l.durationMinutes || 0), 0);
+  const totalStudiedMinsFromLogs = planLogs.reduce((a, l) => a + (l.durationMinutes || 0), 0);
 
-  // Soma também os minutos históricos já embutidos nos tópicos do seed
-  const seedTopicsMins = (plan.subjects || [])
+  // Minutos acumulados nos tópicos
+  const topicsMins = (plan.subjects || [])
     .flatMap(s => s.topics || [])
     .reduce((a, t) => a + (t.studiedMinutes || 0), 0);
-  const grandTotalMins = totalStudiedMins + seedTopicsMins;
 
-  // Questões totais (logs + tópicos)
+  // Evita duplicidade: se houver logs de estudo gravados, eles são a fonte da verdade.
+  // Nos planos sementes sem logs (ex: CREA-MT inicial), usa a minutagem inicial dos tópicos.
+  const grandTotalMins = totalStudiedMinsFromLogs > 0 ? totalStudiedMinsFromLogs : topicsMins;
+
+  // Questões totais (evita duplicidade entre logs e tópicos)
   const allTopics = (plan.subjects || []).flatMap(s => s.topics || []);
-  const totalHit = allTopics.reduce((a, t) => a + (t.questionsHit || 0), 0);
-  const totalMiss = allTopics.reduce((a, t) => a + (t.questionsMiss || 0), 0);
+  const logHits = planLogs.reduce((a, l) => a + (l.questionsHit || 0), 0);
+  const logMiss = planLogs.reduce((a, l) => a + (l.questionsMiss || 0), 0);
+  const logQuestions = logHits + logMiss;
+
+  const topicHits = allTopics.reduce((a, t) => a + (t.questionsHit || 0), 0);
+  const topicMiss = allTopics.reduce((a, t) => a + (t.questionsMiss || 0), 0);
+
+  const totalHit = logQuestions > 0 ? logHits : topicHits;
+  const totalMiss = logQuestions > 0 ? logMiss : topicMiss;
   const totalQuestions = totalHit + totalMiss;
   const perfPct = totalQuestions > 0 ? Math.round((totalHit / totalQuestions) * 100) : 0;
 
@@ -67,32 +78,30 @@ export default function HomeDashboardTab({
   const editalPct = allTopics.length > 0 ? Math.round((doneTopics / allTopics.length) * 100) : 0;
 
   // Dias até a prova
+  const todayIso = getLocalDateIso(new Date());
   const daysToExam = plan.examDate
     ? Math.max(
         0,
-        Math.ceil((new Date(plan.examDate + 'T12:00:00') - new Date()) / (1000 * 60 * 60 * 24))
+        Math.ceil(
+          (new Date(plan.examDate + 'T12:00:00') - new Date(todayIso + 'T12:00:00')) /
+            (1000 * 60 * 60 * 24)
+        )
       )
     : null;
 
-  // Constância nos últimos 7 dias
-  const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    const iso = d.toISOString().split('T')[0];
-    const hasStudy = planLogs.some(l => l.date === iso);
-    return { iso, hasStudy, isToday: i === 6 };
+  // Constância nos últimos 7 dias (baseado estritamente no fuso local, sem offset UTC)
+  const last7Days = getLastNDays(7).map(item => {
+    const hasStudy = planLogs.some(l => l.date === item.iso);
+    return {
+      iso: item.iso,
+      hasStudy,
+      isToday: item.isToday,
+      dayLabel: item.dayLabel
+    };
   });
 
-  // Semana atual (Dom..Sab)
-  const now = new Date();
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-
-  const weekDaysData = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'].map((label, idx) => {
-    const d = new Date(startOfWeek);
-    d.setDate(startOfWeek.getDate() + idx);
-    const iso = d.toISOString().split('T')[0];
+  // Semana atual (DOM..SAB) no fuso local real do usuário
+  const weekDaysData = getCurrentWeekDays().map(({ label, iso }) => {
     const dayLogs = planLogs.filter(l => l.date === iso);
     const mins = dayLogs.reduce((a, l) => a + (l.durationMinutes || 0), 0);
     const qs = dayLogs.reduce((a, l) => a + (l.questionsHit || 0) + (l.questionsMiss || 0), 0);
@@ -102,8 +111,8 @@ export default function HomeDashboardTab({
   const weekStudiedMins = weekDaysData.reduce((a, d) => a + d.mins, 0);
   const weekQuestionsDone = weekDaysData.reduce((a, d) => a + d.qs, 0);
 
-  const targetWeekMins = (plan.weeklyGoalHours || 12) * 60;
-  const targetWeekQuestions = plan.weeklyGoalQuestions || 60;
+  const targetWeekMins = (plan.weeklyGoalHours || 14) * 60;
+  const targetWeekQuestions = plan.weeklyGoalQuestions || Math.round(14 * 7);
   const weekHoursPct = Math.min(100, Math.round((weekStudiedMins / targetWeekMins) * 100));
   const weekQuestionsPct = Math.min(
     100,
@@ -130,8 +139,7 @@ export default function HomeDashboardTab({
 
   const visibleQueue = showAllQueue ? queueItems.slice(0, 10) : queueItems.slice(0, 4);
 
-  // Revisões pendentes até hoje
-  const todayIso = new Date().toISOString().split('T')[0];
+  // Revisões pendentes até hoje (fuso local)
   const dueReviews = (state.reviews || []).filter(
     r => r.planId === plan.id && !r.done && !r.ignored && r.dueDate <= todayIso
   );

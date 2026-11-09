@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import {
   RefreshCw,
   ListChecks,
-  Layers,
   PieChart,
   History,
   FileSpreadsheet,
@@ -13,7 +12,6 @@ import {
   Cloud,
   Plus,
   Trash2,
-  Check,
   ChevronLeft,
   ChevronDown,
   ChevronUp,
@@ -21,9 +19,7 @@ import {
   Upload,
   Activity,
   Edit3,
-  FileText,
-  BookOpen,
-  Video
+  FileText
 } from 'lucide-react';
 import {
   getSupabaseConfig,
@@ -32,6 +28,10 @@ import {
   syncWithSupabase,
   SUPABASE_SETUP_SQL
 } from '../utils/appStore';
+import {
+  exportAllSimuladosStorage,
+  importAllSimuladosStorage
+} from '../utils/simuladosStore';
 import { getLocalDateIso, formatBrazilianDate } from '../utils/dateUtils';
 import EditStudyLogModal from './EditStudyLogModal';
 
@@ -48,7 +48,8 @@ export default function MoreHubTab({
   onDeleteStudyLog,
   onAddReminder,
   onToggleReminder,
-  onReplaceFullState
+  onReplaceFullState,
+  onNavigateTab
 }) {
   const [section, setSection] = useState('menu'); // 'menu' | 'revisoes' | 'planos' | 'estatisticas' | 'historico' | 'simulados' | 'lembretes' | 'conquistas' | 'nuvem'
   const [revFilter, setRevFilter] = useState('programadas'); // 'programadas' | 'atrasadas' | 'ignoradas'
@@ -137,7 +138,11 @@ export default function MoreHubTab({
   };
 
   const exportJsonBackup = () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const backupPayload = {
+      ...state,
+      simuladosStorage: exportAllSimuladosStorage()
+    };
+    const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -154,8 +159,12 @@ export default function MoreHubTab({
       try {
         const parsed = JSON.parse(ev.target.result);
         if (parsed && Array.isArray(parsed.plans)) {
-          onReplaceFullState(parsed);
-          setSyncMessage('Backup JSON restaurado com sucesso!');
+          if (parsed.simuladosStorage) {
+            importAllSimuladosStorage(parsed.simuladosStorage);
+          }
+          const { simuladosStorage: _ignored, ...cleanState } = parsed;
+          onReplaceFullState(cleanState);
+          setSyncMessage('Backup JSON restaurado com sucesso (incluindo Simulados e Questões)!');
         }
       } catch {
         setSyncMessage('Arquivo JSON inválido.');
@@ -191,10 +200,10 @@ export default function MoreHubTab({
       },
       {
         id: 'simulados',
-        label: 'Simulados',
-        badge: (state.simulados || []).filter(s => s.planId === plan.id).length,
+        label: 'Simulados Oficiais (70q) & App de Questões',
+        badge: (state.simulados || []).length || 7,
         icon: FileSpreadsheet,
-        onClick: openSimuladoForm
+        onClick: () => (onNavigateTab ? onNavigateTab('simulados') : openSimuladoForm())
       },
       {
         id: 'lembretes',
@@ -489,7 +498,7 @@ export default function MoreHubTab({
 
           <div className="space-y-2.5">
             {(state.simulados || [])
-              .filter(s => s.planId === plan.id)
+              .filter(s => !s.planId || s.planId === plan.id)
               .map(sim => (
                 <div
                   key={sim.id}
@@ -502,7 +511,7 @@ export default function MoreHubTab({
                     </span>
                   </div>
                   <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold text-sm">
-                    {sim.performancePct}%
+                    {sim.performancePct ?? sim.pct ?? 0}%
                   </span>
                 </div>
               ))}

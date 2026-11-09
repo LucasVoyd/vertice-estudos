@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { buildOfficialTecnicoLegislativoSubjects } from '../data/editalCmc2026Oficial.js';
 import { calculateSubjectWeight, generateStudyCycle } from './editalParser.js';
 import { getLocalDateIso } from './dateUtils.js';
+import { exportAllSimuladosStorage, importAllSimuladosStorage } from './simuladosStore.js';
 
 const STORAGE_KEY = 'vertice_estudos_state_v1';
 const SUPABASE_CFG_KEY = 'vertice_supabase_cfg_v1';
@@ -434,13 +435,20 @@ export async function syncWithSupabase(localState, direction = 'push') {
 
       if (error) return { ok: false, error: error.message };
       if (!data || !data.payload) return { ok: false, error: 'Nenhum backup encontrado na nuvem com este ID.' };
+      if (data.payload.simuladosStorage) {
+        importAllSimuladosStorage(data.payload.simuladosStorage);
+      }
       return { ok: true, state: data.payload, updatedAt: data.updated_at };
     } else {
+      const payloadWithSimulados = {
+        ...localState,
+        simuladosStorage: exportAllSimuladosStorage()
+      };
       const { error } = await supabase
         .from('study_states')
         .upsert({
           id: syncKey,
-          payload: localState,
+          payload: payloadWithSimulados,
           updated_at: new Date().toISOString()
         });
 

@@ -11,16 +11,17 @@ import React, { useState } from 'react';
 import {
   Plus,
   Calendar,
-  AlertCircle,
-  CheckCircle2,
-  X,
   Edit3,
   Sparkles,
   Play,
-  ArrowDown
+  ArrowDown,
+  Award,
+  Save,
+  Layers
 } from 'lucide-react';
 import { computeWeeklyGoalAlert } from '../utils/editalParser';
 import { getLocalDateIso, getCurrentWeekDays, getLastNDays } from '../utils/dateUtils';
+import { loadActiveSimuladoAttempts, loadCompletedSimulados } from '../utils/simuladosStore';
 
 function formatHoursMins(mins) {
   const m = Math.max(0, Math.round(mins || 0));
@@ -37,6 +38,7 @@ export default function HomeDashboardTab({
   onUpdatePlanMeta,
   onStartStudyFromCycle,
   onNavigateTab,
+  onOpenSimulado,
   onCompleteReview
 }) {
   const [showAllQueue, setShowAllQueue] = useState(false);
@@ -261,6 +263,86 @@ export default function HomeDashboardTab({
           className="rounded-lg bg-[#1e2235] border border-slate-600 px-3 py-1.5 text-xs text-emerald-400 font-bold"
         />
       </div>
+
+      {/* Card Central de Simulados & App de Questões Selecon (Com Retomada Instantânea Anti-Perda) */}
+      {(() => {
+        const profileKey = state?.activeProfile || 'lucas';
+        const activeMap = loadActiveSimuladoAttempts(profileKey);
+        const activeAttempts = Object.values(activeMap || {});
+        const completedSims = loadCompletedSimulados(profileKey);
+        const firstActive = activeAttempts[0] || null;
+        const ansCount = firstActive ? Object.keys(firstActive.answers || {}).length : 0;
+        const totalQ = firstActive?.totalQuestions || 70;
+
+        return (
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-[#252a41] via-[#1f293d] to-[#1a1d2e] border border-cyan-500/40 shadow-xl space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-extrabold uppercase">
+                    Novo • Auto-Save Instantâneo
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-extrabold uppercase">
+                    216 Questões Selecon CMC 2026
+                  </span>
+                </div>
+                <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2 pt-0.5">
+                  <Award className="w-5 h-5 text-emerald-400 shrink-0" />
+                  Simulados Oficiais (70q) & App de Questões
+                </h3>
+                <p className="text-xs text-slate-300">
+                  3 Simulados Oficiais Completos (70 questões • 100 pts + Discursiva) + 4 Baterias Táticas e Gerador de Cadernos. Suas respostas ficam salvas a cada clique.
+                </p>
+              </div>
+            </div>
+
+            {firstActive ? (
+              <div className="p-3.5 rounded-xl bg-slate-950/85 border border-emerald-400/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase text-emerald-300 flex items-center gap-1">
+                    <Save className="w-3.5 h-3.5" />
+                    Simulado em Andamento Salvo ({ansCount}/{totalQ} respondidas)
+                  </span>
+                  <p className="text-xs sm:text-sm font-extrabold text-white mt-0.5">
+                    {firstActive.simuladoTitle}
+                  </p>
+                  <p className="text-[11px] text-cyan-300">
+                    Você parou na Questão {(Number(firstActive.currentIndex) || 0) + 1} de {totalQ}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenSimulado
+                      ? onOpenSimulado(firstActive.simuladoId)
+                      : onNavigateTab('simulados')
+                  }
+                  className="px-4 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 shrink-0"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  Continuar da Questão {(Number(firstActive.currentIndex) || 0) + 1}
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-xs text-slate-400">
+                  {completedSims.length > 0
+                    ? `${completedSims.length} simulado(s) já concluído(s) com boletim salvo`
+                    : 'Pronto para iniciar o 1º Simulado Oficial (70 questões • 100 pts)'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('simulados')}
+                  className="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow"
+                >
+                  <Layers className="w-4 h-4" />
+                  Abrir Simulados & App de Questões →
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Card Constância nos Estudos */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#2c3148] border border-slate-700/60 space-y-3">

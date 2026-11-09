@@ -10,7 +10,8 @@ import {
   Plus,
   Play,
   Pause,
-  Clock
+  Clock,
+  Award
 } from 'lucide-react';
 import { loadAppState, saveAppState } from './utils/appStore';
 import { linesToTopicsTree, generateStudyCycle, calculateSubjectWeight } from './utils/editalParser';
@@ -27,11 +28,13 @@ import {
   requestScreenWakeLock,
   releaseScreenWakeLock
 } from './utils/persistentTimer';
+import { loadActiveSimuladoAttempts } from './utils/simuladosStore';
 import HomeDashboardTab from './components/HomeDashboardTab';
 import EditalVerticalTab from './components/EditalVerticalTab';
 import StudyRegisterTab from './components/StudyRegisterTab';
 import CycleTab from './components/CycleTab';
 import MoreHubTab from './components/MoreHubTab';
+import SimuladosTab from './components/SimuladosTab';
 import { NewPlanWizardModal } from './components/EditalWizardModal';
 
 export default function App() {
@@ -47,6 +50,7 @@ export default function App() {
   });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [preselectedStudy, setPreselectedStudy] = useState(null);
+  const [initialSimuladoId, setInitialSimuladoId] = useState(null);
 
   useEffect(() => {
     saveAppState(state);
@@ -276,10 +280,10 @@ export default function App() {
     });
   };
 
-  // Salvar sessão de estudo (Cronômetro ou Manual) + Atualizar Ciclo, Múltiplos Tópicos e Agendar Revisões
+  // Salvar sessão de estudo (Cronômetro, Manual ou Simulado) + Atualizar Ciclo, Múltiplos Tópicos e Agendar Revisões
   const handleSaveStudySession = session => {
     setState(prev => {
-      const logId = `log_${Date.now()}`;
+      const logId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       const targetTopicIds =
         session.topicIds && session.topicIds.length > 0
           ? session.topicIds
@@ -288,9 +292,16 @@ export default function App() {
           : [];
       const numTopics = Math.max(1, targetTopicIds.length);
 
-      const durationPerTopic = Math.round((session.durationMinutes || 0) / numTopics);
-      const hitPerTopic = Math.round((session.questionsHit || 0) / numTopics);
-      const missPerTopic = Math.round((session.questionsMiss || 0) / numTopics);
+      const totalDuration = Number(session.durationMinutes) || 0;
+      const totalHit = Number(session.questionsHit) || 0;
+      const totalMiss = Number(session.questionsMiss) || 0;
+
+      const baseDuration = Math.floor(totalDuration / numTopics);
+      const remDuration = totalDuration % numTopics;
+      const baseHit = Math.floor(totalHit / numTopics);
+      const remHit = totalHit % numTopics;
+      const baseMiss = Math.floor(totalMiss / numTopics);
+      const remMiss = totalMiss % numTopics;
 
       const newLog = {
         id: logId,
@@ -307,12 +318,23 @@ export default function App() {
         const subjects = (plan.subjects || []).map(subj => {
           if (subj.id !== session.subjectId) return subj;
           const topics = (subj.topics || []).map(top => {
-            if (!targetTopicIds.includes(top.id)) return top;
+            const targetIdx = targetTopicIds.indexOf(top.id);
+            if (targetIdx < 0) return top;
+
+            const exactBreakdown = session.topicBreakdown?.[top.id];
+            const topicHitAdd = exactBreakdown
+              ? Number(exactBreakdown.hits) || 0
+              : baseHit + (targetIdx < remHit ? 1 : 0);
+            const topicMissAdd = exactBreakdown
+              ? Number(exactBreakdown.misses) || 0
+              : baseMiss + (targetIdx < remMiss ? 1 : 0);
+            const topicDurationAdd = baseDuration + (targetIdx < remDuration ? 1 : 0);
+
             return {
               ...top,
-              questionsHit: (top.questionsHit || 0) + hitPerTopic,
-              questionsMiss: (top.questionsMiss || 0) + missPerTopic,
-              studiedMinutes: (top.studiedMinutes || 0) + durationPerTopic,
+              questionsHit: (top.questionsHit || 0) + topicHitAdd,
+              questionsMiss: (top.questionsMiss || 0) + topicMissAdd,
+              studiedMinutes: (top.studiedMinutes || 0) + topicDurationAdd,
               lastStudiedAt: session.date || getLocalDateIso(),
               finished: session.markTopicsFinished ? true : top.finished,
               finishedAt: session.markTopicsFinished ? (top.finishedAt || new Date().toISOString()) : top.finishedAt
@@ -611,6 +633,10 @@ export default function App() {
               setActiveTab('estudo');
             }}
             onNavigateTab={tab => setActiveTab(tab)}
+            onOpenSimulado={simId => {
+              setInitialSimuladoId(simId);
+              setActiveTab('simulados');
+            }}
             onCompleteReview={revId =>
               setState(prev => ({
                 ...prev,
@@ -648,6 +674,29 @@ export default function App() {
               setPreselectedStudy({ subjectId, topicId, openForm: true });
               setActiveTab('estudo');
             }}
+          />
+        )}
+
+        {activeTab === 'simulados' && (
+          <SimuladosTab
+            plan={currentPlan}
+            activeProfile={state.activeProfile || 'lucas'}
+            simulados={state.simulados || []}
+            initialSimuladoId={initialSimuladoId}
+            onClearInitialSimulado={() => setInitialSimuladoId(null)}
+            onAddSimulado={sim =>
+              setState(prev => ({
+                ...prev,
+                simulados: [sim, ...(prev.simulados || [])]
+              }))
+            }
+            onDeleteSimulado={simId =>
+              setState(prev => ({
+                ...prev,
+                simulados: (prev.simulados || []).filter(s => s.id !== simId)
+              }))
+            }
+            onSaveStudySession={handleSaveStudySession}
           />
         )}
 
@@ -707,6 +756,7 @@ export default function App() {
           <MoreHubTab
             state={state}
             plan={currentPlan}
+            onNavigateTab={tab => setActiveTab(tab)}
             onSelectPlan={id => {
               setState(prev => ({ ...prev, selectedPlanId: id }));
               setActiveTab('inicio');
@@ -817,7 +867,7 @@ export default function App() {
       )}
 
       {/* Botão Flutuante Verde (Quick Register) fiel aos prints */}
-      {activeTab !== 'estudo' && !hasActiveTimerSession && (
+      {activeTab !== 'estudo' && activeTab !== 'simulados' && !hasActiveTimerSession && (
         <button
           type="button"
           onClick={() => {
@@ -831,14 +881,20 @@ export default function App() {
         </button>
       )}
 
-      {/* Barra de Navegação Inferior com as 5 abas exatas dos prints: Início | Edital | Estudo | Planejamento | Ver mais */}
+      {/* Barra de Navegação Inferior com 6 abas: Início | Edital | Simulados | Estudo | Ciclo | Mais */}
       <nav className="fixed bottom-0 inset-x-0 z-30 bg-[#1a1d2e] border-t border-slate-800">
-        <div className="max-w-2xl mx-auto grid grid-cols-5">
+        <div className="max-w-2xl mx-auto grid grid-cols-6">
           {[
             { id: 'inicio', label: 'Início', icon: Home },
             { id: 'edital', label: 'Edital', icon: FileText },
+            {
+              id: 'simulados',
+              label: 'Simulados',
+              icon: Award,
+              badge: Object.keys(loadActiveSimuladoAttempts(state.activeProfile || 'lucas') || {}).length > 0
+            },
             { id: 'estudo', label: 'Estudo', icon: PlusCircle, badge: timerState.running },
-            { id: 'planejamento', label: 'Planejamento', icon: Calendar },
+            { id: 'planejamento', label: 'Ciclo', icon: Calendar },
             { id: 'mais', label: 'Ver mais', icon: Menu }
           ].map(tab => {
             const Icon = tab.icon;
@@ -858,9 +914,9 @@ export default function App() {
                     <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#1a1d2e] animate-ping" />
                   )}
                 </div>
-                <span className="text-[11px] font-medium">{tab.label}</span>
+                <span className="text-[10px] sm:text-[11px] font-medium">{tab.label}</span>
                 {active && (
-                  <span className="absolute bottom-0 inset-x-4 h-1 rounded-t-full bg-emerald-400" />
+                  <span className="absolute bottom-0 inset-x-3 h-1 rounded-t-full bg-emerald-400" />
                 )}
               </button>
             );

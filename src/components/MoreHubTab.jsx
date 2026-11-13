@@ -19,7 +19,8 @@ import {
   Upload,
   Activity,
   Edit3,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import {
   getSupabaseConfig,
@@ -34,6 +35,7 @@ import {
 } from '../utils/simuladosStore';
 import { getLocalDateIso, formatBrazilianDate } from '../utils/dateUtils';
 import EditStudyLogModal from './EditStudyLogModal';
+import ExportReportModal from './ExportReportModal';
 
 export default function MoreHubTab({
   state,
@@ -55,6 +57,7 @@ export default function MoreHubTab({
   const [revFilter, setRevFilter] = useState('programadas'); // 'programadas' | 'atrasadas' | 'ignoradas'
   const [editingLog, setEditingLog] = useState(null);
   const [expandedLogIds, setExpandedLogIds] = useState({});
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   // Estado Simulado
   const [simTitle, setSimTitle] = useState('');
@@ -173,71 +176,90 @@ export default function MoreHubTab({
     reader.readAsText(file);
   };
 
-  if (section === 'menu') {
-    const items = [
-      {
-        id: 'revisoes',
-        label: 'Revisões',
-        badge: delayedReviews.length + scheduledReviews.length,
-        icon: RefreshCw
-      },
-      {
-        id: 'planos',
-        label: 'Planos de Estudo',
-        badge: (state.plans || []).length,
-        icon: ListChecks
-      },
-      {
-        id: 'estatisticas',
-        label: 'Estatísticas',
-        icon: PieChart
-      },
-      {
-        id: 'historico',
-        label: 'Histórico',
-        badge: (state.studyLogs || []).filter(l => l.planId === plan.id).length,
-        icon: History
-      },
-      {
-        id: 'simulados',
-        label: 'Simulados Oficiais (70q) & App de Questões',
-        badge: (state.simulados || []).length || 7,
-        icon: FileSpreadsheet,
-        onClick: () => (onNavigateTab ? onNavigateTab('simulados') : openSimuladoForm())
-      },
-      {
-        id: 'lembretes',
-        label: 'Lembretes',
-        badge: (state.reminders || []).filter(r => !r.done).length,
-        icon: CalendarCheck
-      },
-      {
-        id: 'conquistas',
-        label: 'Conquistas',
-        icon: Award
-      },
-      {
-        id: 'nuvem',
-        label: 'Sincronização Supabase & Backup JSON',
-        icon: Cloud
-      }
-    ];
+  const menuItems = [
+    {
+      id: 'exportar_ia',
+      label: 'Exportar Relatório p/ Gemini (IA)',
+      icon: Sparkles,
+      highlight: true,
+      onClick: () => setExportModalOpen(true)
+    },
+    {
+      id: 'revisoes',
+      label: 'Revisões',
+      badge: delayedReviews.length + scheduledReviews.length,
+      icon: RefreshCw
+    },
+    {
+      id: 'planos',
+      label: 'Planos de Estudo',
+      badge: (state.plans || []).length,
+      icon: ListChecks
+    },
+    {
+      id: 'estatisticas',
+      label: 'Estatísticas',
+      icon: PieChart
+    },
+    {
+      id: 'historico',
+      label: 'Histórico',
+      badge: (state.studyLogs || []).filter(l => l.planId === plan.id).length,
+      icon: History
+    },
+    {
+      id: 'simulados',
+      label: 'Simulados Oficiais (70q) & App de Questões',
+      badge: (state.simulados || []).length || 7,
+      icon: FileSpreadsheet,
+      onClick: () => (onNavigateTab ? onNavigateTab('simulados') : openSimuladoForm())
+    },
+    {
+      id: 'lembretes',
+      label: 'Lembretes',
+      badge: (state.reminders || []).filter(r => !r.done).length,
+      icon: CalendarCheck
+    },
+    {
+      id: 'conquistas',
+      label: 'Conquistas',
+      icon: Award
+    },
+    {
+      id: 'nuvem',
+      label: 'Sincronização Supabase & Backup JSON',
+      icon: Cloud
+    }
+  ];
 
-    return (
-      <div className="space-y-2 pb-24">
+  return (
+    <div className="space-y-4 pb-24">
+      {section === 'menu' ? (
         <div className="divide-y divide-slate-700/70 rounded-2xl bg-[#2c3148] border border-slate-700/60 overflow-hidden">
-          {items.map(it => {
+          {menuItems.map(it => {
             const Icon = it.icon;
             return (
               <button
                 key={it.id}
                 type="button"
                 onClick={() => (it.onClick ? it.onClick() : setSection(it.id))}
-                className="w-full p-4 flex items-center justify-between hover:bg-[#343a54] transition-colors text-left"
+                className={`w-full p-4 flex items-center justify-between hover:bg-[#343a54] transition-colors text-left ${
+                  it.highlight ? 'bg-cyan-500/10' : ''
+                }`}
               >
                 <div className="flex items-center gap-4">
-                  <Icon className="w-6 h-6 text-emerald-400 shrink-0" />
-                  <span className="text-base font-bold text-white">{it.label}</span>
+                  <Icon
+                    className={`w-6 h-6 shrink-0 ${
+                      it.highlight ? 'text-cyan-300' : 'text-emerald-400'
+                    }`}
+                  />
+                  <span
+                    className={`text-base font-bold ${
+                      it.highlight ? 'text-cyan-200' : 'text-white'
+                    }`}
+                  >
+                    {it.label}
+                  </span>
                 </div>
                 {it.badge !== undefined && it.badge > 0 && (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">
@@ -248,20 +270,16 @@ export default function MoreHubTab({
             );
           })}
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 pb-24">
-      <button
-        type="button"
-        onClick={() => setSection('menu')}
-        className="text-xs font-bold text-emerald-400 hover:underline flex items-center gap-1"
-      >
-        <ChevronLeft className="w-4 h-4" />
-        Voltar para o menu Ver mais
-      </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={() => setSection('menu')}
+            className="text-xs font-bold text-emerald-400 hover:underline flex items-center gap-1"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Voltar para o menu Ver mais
+          </button>
 
       {/* SEÇÃO: REVISÕES ESPAÇADAS */}
       {section === 'revisoes' && (
@@ -522,9 +540,19 @@ export default function MoreHubTab({
       {/* SEÇÃO: ESTATÍSTICAS POR DISCIPLINA */}
       {section === 'estatisticas' && (
         <div className="space-y-4">
-          <h2 className="text-xl font-extrabold text-emerald-400">
-            Estatísticas por Disciplina
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-extrabold text-emerald-400">
+              Estatísticas por Disciplina
+            </h2>
+            <button
+              type="button"
+              onClick={() => setExportModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Exportar p/ Gemini
+            </button>
+          </div>
           <div className="space-y-2.5">
             {(plan.subjects || []).map(s => {
               const sTopics = s.topics || [];
@@ -560,11 +588,21 @@ export default function MoreHubTab({
       {/* SEÇÃO: HISTÓRICO DE SESSÕES COM DETALHES, ANOTAÇÕES E EDIÇÃO */}
       {section === 'historico' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold text-emerald-400">Histórico de Estudos</h2>
-            <span className="text-xs text-slate-400">
-              {(state.studyLogs || []).filter(l => l.planId === plan.id).length} sessões registradas
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-extrabold text-emerald-400">Histórico de Estudos</h2>
+              <span className="text-xs text-slate-400">
+                {(state.studyLogs || []).filter(l => l.planId === plan.id).length} sessões registradas
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExportModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Exportar p/ Gemini
+            </button>
           </div>
 
           {(state.studyLogs || []).filter(l => l.planId === plan.id).length === 0 ? (
@@ -1026,6 +1064,16 @@ export default function MoreHubTab({
             </details>
           </div>
         </div>
+      )}
+        </>
+      )}
+
+      {exportModalOpen && (
+        <ExportReportModal
+          state={state}
+          plan={plan}
+          onClose={() => setExportModalOpen(false)}
+        />
       )}
     </div>
   );

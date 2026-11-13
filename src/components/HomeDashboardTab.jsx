@@ -17,11 +17,13 @@ import {
   ArrowDown,
   Award,
   Save,
-  Layers
+  Layers,
+  Download
 } from 'lucide-react';
 import { computeWeeklyGoalAlert } from '../utils/editalParser';
 import { getLocalDateIso, getCurrentWeekDays, getLastNDays } from '../utils/dateUtils';
 import { loadActiveSimuladoAttempts, loadCompletedSimulados } from '../utils/simuladosStore';
+import ExportReportModal from './ExportReportModal';
 
 function formatHoursMins(mins) {
   const m = Math.max(0, Math.round(mins || 0));
@@ -46,6 +48,7 @@ export default function HomeDashboardTab({
   const [goalHoursInput, setGoalHoursInput] = useState(plan?.weeklyGoalHours || 12);
   const [goalQuestionsInput, setGoalQuestionsInput] = useState(plan?.weeklyGoalQuestions || 60);
   const [weeklyChartMode, setWeeklyChartMode] = useState('tempo'); // 'tempo' | 'questoes'
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   if (!plan) return null;
 
@@ -172,14 +175,26 @@ export default function HomeDashboardTab({
           </select>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenNewPlanWizard}
-          className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Plano / Edital
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setExportModalOpen(true)}
+            title="Exportar relatório detalhado dos últimos dias para avaliar com o Gemini"
+            className="px-3 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5 shadow"
+          >
+            <Download className="w-4 h-4" />
+            Exportar p/ Gemini
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenNewPlanWizard}
+            className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Plano / Edital
+          </button>
+        </div>
       </div>
 
       {/* Frase motivacional */}
@@ -664,6 +679,14 @@ export default function HomeDashboardTab({
             : `Total de Questões na Semana: ${weekQuestionsDone}`}
         </div>
       </div>
+
+      {exportModalOpen && (
+        <ExportReportModal
+          state={state}
+          plan={plan}
+          onClose={() => setExportModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

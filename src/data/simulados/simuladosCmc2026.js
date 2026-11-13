@@ -620,6 +620,7 @@ export function buildCustomQuestionNotebook(filters = {}, questionHistory = {}) 
     topicId = null,
     sourceFilter = 'all', // 'all' | 'real_only' | 'ineditas_only'
     statusFilter = 'all', // 'all' | 'unanswered' | 'wrong_only' | 'correct_only'
+    searchQuery = '',
     limit = 20,
     shuffle = true
   } = filters;
@@ -661,6 +662,18 @@ export function buildCustomQuestionNotebook(filters = {}, questionHistory = {}) 
     pool = pool.filter((q) => questionHistory[q.id]?.lastResult === 'correct');
   }
 
+  if (searchQuery && String(searchQuery).trim()) {
+    const term = String(searchQuery).trim().toLowerCase();
+    pool = pool.filter(
+      (q) =>
+        (q.enunciado || '').toLowerCase().includes(term) ||
+        (q.topicTitle || '').toLowerCase().includes(term) ||
+        (q.subjectName || '').toLowerCase().includes(term) ||
+        (q.sourceType || '').toLowerCase().includes(term) ||
+        (q.explanation || '').toLowerCase().includes(term)
+    );
+  }
+
   if (shuffle) {
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -668,18 +681,49 @@ export function buildCustomQuestionNotebook(filters = {}, questionHistory = {}) 
     }
   }
 
-  const selected = pool.slice(0, Math.max(1, Number(limit) || 20));
+  const effectiveLimit =
+    limit === 'all' || limit === 0 || Number(limit) <= 0
+      ? pool.length
+      : Math.max(1, Number(limit) || 20);
+  const selected = pool.slice(0, effectiveLimit);
   const totalPts = selected.reduce((acc, q) => acc + (Number(q.points) || 1), 0);
+
+  const selectedSubjNames = effectiveSubjectIds
+    .map((id) => SUBJECT_MAP[id]?.name)
+    .filter(Boolean);
+  const selectedTopicLabels = effectiveTopicIds
+    .map((id) => {
+      const t = TOPIC_MAP[id];
+      return t ? `${t.number ? `[${t.number}] ` : ''}${t.label || t.name}` : id;
+    })
+    .filter(Boolean);
+
+  let title = `Simulado Tático (${selected.length} Questões)`;
+  let subtitle = `${selected.length} questões selecionadas • ${totalPts.toFixed(2)} pts`;
+
+  if (selectedTopicLabels.length > 0) {
+    title = `Simulado de Tópicos (${selected.length}q • ${selectedTopicLabels.length} tópico${
+      selectedTopicLabels.length > 1 ? 's' : ''
+    })`;
+    const previewTopics = selectedTopicLabels.slice(0, 2).join(' + ');
+    const extraCount = selectedTopicLabels.length > 2 ? ` (+${selectedTopicLabels.length - 2})` : '';
+    subtitle = `${previewTopics}${extraCount} • ${totalPts.toFixed(2)} pts`;
+  } else if (selectedSubjNames.length > 0) {
+    const previewSubjs = selectedSubjNames.slice(0, 2).join(' + ');
+    const extraCount = selectedSubjNames.length > 2 ? ` (+${selectedSubjNames.length - 2})` : '';
+    title = `Simulado ${previewSubjs}${extraCount} (${selected.length}q)`;
+    subtitle = `${selected.length} questões das áreas selecionadas • ${totalPts.toFixed(2)} pts`;
+  }
 
   return {
     id: `custom_nb_${Date.now()}`,
-    code: 'CADERNO PERSONALIZADO',
-    title: `Caderno Tático (${selected.length} Questões)`,
-    subtitle: `${selected.length} questões selecionadas • ${totalPts.toFixed(2)} pts`,
+    code: 'SIMULADO PERSONALIZADO',
+    title,
+    subtitle,
     category: 'custom',
     badge: 'Modo App de Questões',
     badgeColor: 'cyan',
-    durationMinutes: Math.max(15, selected.length * 3),
+    durationMinutes: Math.max(10, selected.length * 3),
     totalPoints: Number(totalPts.toFixed(2)),
     minPassPoints: Number((totalPts * 0.5).toFixed(2)),
     discursiva: null,

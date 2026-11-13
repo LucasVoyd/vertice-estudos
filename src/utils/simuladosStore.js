@@ -250,6 +250,8 @@ export function loadFeedPracticeState(profileOverride) {
     searchQuery: '',
     subjectId: 'all',
     topicId: 'all',
+    subjectIds: [],
+    topicIds: [],
     sourceFilter: 'all',
     statusFilter: 'all',
     customLimit: 20,
@@ -257,9 +259,35 @@ export function loadFeedPracticeState(profileOverride) {
   };
   const parsed = readJsonWithLegacyFallback(FEED_PRACTICE_KEY, profileOverride, fallback);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback;
+
+  const normalizeIds = (arr, legacySingle) => {
+    if (Array.isArray(arr)) {
+      return [...new Set(arr.filter((v) => typeof v === 'string' && v.trim() && v !== 'all'))];
+    }
+    if (typeof legacySingle === 'string' && legacySingle.trim() && legacySingle !== 'all') {
+      return [legacySingle.trim()];
+    }
+    return [];
+  };
+
+  const subjectIds = normalizeIds(parsed.subjectIds, parsed.subjectId);
+  const topicIds = normalizeIds(parsed.topicIds, parsed.topicId);
+  const parsedLimitNum = Number(parsed.customLimit);
+  const customLimit =
+    parsed.customLimit === 'all'
+      ? 'all'
+      : Number.isFinite(parsedLimitNum) && parsedLimitNum > 0
+        ? parsedLimitNum
+        : fallback.customLimit;
+
   return {
     ...fallback,
     ...parsed,
+    subjectIds,
+    topicIds,
+    subjectId: subjectIds.length === 1 ? subjectIds[0] : 'all',
+    topicId: topicIds.length === 1 ? topicIds[0] : 'all',
+    customLimit,
     answers: parsed.answers && typeof parsed.answers === 'object' ? parsed.answers : {},
     eliminated: parsed.eliminated && typeof parsed.eliminated === 'object' ? parsed.eliminated : {},
     revealed: parsed.revealed && typeof parsed.revealed === 'object' ? parsed.revealed : {}

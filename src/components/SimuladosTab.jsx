@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Award,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
   Clock,
   Eye,
   Filter,
@@ -17,8 +22,7 @@ import {
   Search,
   Trash2,
   TrendingUp,
-  ChevronLeft,
-  ChevronRight,
+  X,
   XCircle
 } from 'lucide-react';
 import {
@@ -110,11 +114,19 @@ export default function SimuladosTab({
   const [reportReviewFilter, setReportReviewFilter] = useState('wrong'); // 'all' | 'wrong' | 'blank' | 'correct'
 
   // Estado do App de Questões (Gerador de Cadernos + Feed Direto) sincronizado com localStorage
-  const [customSubjectId, setCustomSubjectId] = useState(initialFeedState.subjectId || 'all');
-  const [customTopicId, setCustomTopicId] = useState(initialFeedState.topicId || 'all');
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState(() =>
+    Array.isArray(initialFeedState.subjectIds) ? initialFeedState.subjectIds : []
+  );
+  const [selectedTopicIds, setSelectedTopicIds] = useState(() =>
+    Array.isArray(initialFeedState.topicIds) ? initialFeedState.topicIds : []
+  );
+  const [topicFilterQuery, setTopicFilterQuery] = useState('');
+  const [topicPickerOpen, setTopicPickerOpen] = useState(true);
   const [customSource, setCustomSource] = useState(initialFeedState.sourceFilter || 'all');
   const [customStatus, setCustomStatus] = useState(initialFeedState.statusFilter || 'all');
-  const [customLimit, setCustomLimit] = useState(Number(initialFeedState.customLimit) || 20);
+  const [customLimit, setCustomLimit] = useState(
+    initialFeedState.customLimit === 'all' ? 'all' : Number(initialFeedState.customLimit) || 20
+  );
   const [customMode, setCustomMode] = useState(initialFeedState.customMode || 'treino');
   const [searchQuery, setSearchQuery] = useState(initialFeedState.searchQuery || '');
   const [feedPage, setFeedPage] = useState(Number(initialFeedState.page) || 1);
@@ -136,11 +148,12 @@ export default function SimuladosTab({
     setCompletedList(loadCompletedSimulados(activeProfile));
     setQuestionHistory(loadQuestionHistory(activeProfile));
     const savedFeed = loadFeedPracticeState(activeProfile);
-    setCustomSubjectId(savedFeed.subjectId || 'all');
-    setCustomTopicId(savedFeed.topicId || 'all');
+    setSelectedSubjectIds(Array.isArray(savedFeed.subjectIds) ? savedFeed.subjectIds : []);
+    setSelectedTopicIds(Array.isArray(savedFeed.topicIds) ? savedFeed.topicIds : []);
+    setTopicFilterQuery('');
     setCustomSource(savedFeed.sourceFilter || 'all');
     setCustomStatus(savedFeed.statusFilter || 'all');
-    setCustomLimit(Number(savedFeed.customLimit) || 20);
+    setCustomLimit(savedFeed.customLimit === 'all' ? 'all' : Number(savedFeed.customLimit) || 20);
     setCustomMode(savedFeed.customMode || 'treino');
     setSearchQuery(savedFeed.searchQuery || '');
     setFeedPage(Number(savedFeed.page) || 1);
@@ -161,8 +174,10 @@ export default function SimuladosTab({
         revealed: feedRevealed,
         page: feedPage,
         searchQuery,
-        subjectId: customSubjectId,
-        topicId: customTopicId,
+        subjectIds: selectedSubjectIds,
+        topicIds: selectedTopicIds,
+        subjectId: selectedSubjectIds.length === 1 ? selectedSubjectIds[0] : 'all',
+        topicId: selectedTopicIds.length === 1 ? selectedTopicIds[0] : 'all',
         sourceFilter: customSource,
         statusFilter: customStatus,
         customLimit,
@@ -176,8 +191,8 @@ export default function SimuladosTab({
     feedRevealed,
     feedPage,
     searchQuery,
-    customSubjectId,
-    customTopicId,
+    selectedSubjectIds,
+    selectedTopicIds,
     customSource,
     customStatus,
     customLimit,
@@ -594,11 +609,205 @@ export default function SimuladosTab({
     return counts;
   }, []);
 
+  const subjectShortLabels = useMemo(
+    () => ({
+      sub_cmc_pt: 'Português',
+      sub_cmc_rlm: 'RLM',
+      sub_cmc_info: 'Informática',
+      sub_cmc_leg: 'Legislação CMC',
+      sub_cmc_hgmt: 'Hist. e Geo. MT',
+      sub_cmc_etica: 'Ética e Filosofia',
+      sub_cmc_rel: 'Rel. Interpessoais',
+      sub_cmc_esp: 'Conh. Específicos'
+    }),
+    []
+  );
+
+  const { subjectQuestionCounts, directTopicQuestionCounts } = useMemo(() => {
+    const subjCounts = {};
+    const directCounts = {};
+    ALL_SIMULADO_QUESTIONS.forEach((q) => {
+      subjCounts[q.subjectId] = (subjCounts[q.subjectId] || 0) + 1;
+      if (q.topicId) {
+        directCounts[q.topicId] = (directCounts[q.topicId] || 0) + 1;
+      }
+    });
+    return { subjectQuestionCounts: subjCounts, directTopicQuestionCounts: directCounts };
+  }, []);
+
+  const topicHierarchy = useMemo(() => {
+    const topicById = {};
+    const topicSubjectById = {};
+    const childrenByParent = {};
+    (OFFICIAL_CMC_SUBJECTS || []).forEach((s) => {
+      (s.topics || []).forEach((t) => {
+        topicById[t.id] = { ...t, subjectId: s.id, subjectName: s.name };
+        topicSubjectById[t.id] = s.id;
+        if (t.parentId && (topicQuestionCounts[t.id] || 0) > 0) {
+          if (!childrenByParent[t.parentId]) childrenByParent[t.parentId] = [];
+          childrenByParent[t.parentId].push(t);
+        }
+      });
+    });
+    return { topicById, topicSubjectById, childrenByParent };
+  }, [topicQuestionCounts]);
+
+  const editalAreaBlocks = useMemo(() => {
+    const subjects = OFFICIAL_CMC_SUBJECTS || [];
+    return [
+      {
+        id: 'basicos',
+        label: 'Básicos',
+        subjectIds: subjects
+          .filter((s) => (s.area || '').startsWith('Conhecimentos Básicos'))
+          .map((s) => s.id)
+      },
+      {
+        id: 'gerais',
+        label: 'Gerais',
+        subjectIds: subjects
+          .filter((s) => (s.area || '') === 'Conhecimentos Gerais')
+          .map((s) => s.id)
+      },
+      {
+        id: 'especificos',
+        label: 'Específicos',
+        subjectIds: subjects
+          .filter((s) => (s.area || '').startsWith('Conhecimentos Específicos'))
+          .map((s) => s.id)
+      }
+    ].filter((b) => b.subjectIds.length > 0);
+  }, []);
+
+  const applySubjectSelection = (rawNextIds) => {
+    const allCount = (OFFICIAL_CMC_SUBJECTS || []).length;
+    const uniqueNext = [...new Set(rawNextIds)];
+    const normalized = uniqueNext.length >= allCount ? [] : uniqueNext;
+    setSelectedSubjectIds(normalized);
+    if (normalized.length > 0) {
+      const allowed = new Set(normalized);
+      setSelectedTopicIds((prev) =>
+        prev.filter((tid) => allowed.has(topicHierarchy.topicSubjectById[tid]))
+      );
+    }
+    setFeedPage(1);
+  };
+
+  const toggleSubjectSelection = (subjectId) => {
+    const next = selectedSubjectIds.includes(subjectId)
+      ? selectedSubjectIds.filter((id) => id !== subjectId)
+      : [...selectedSubjectIds, subjectId];
+    applySubjectSelection(next);
+  };
+
+  const toggleAreaBlock = (blockSubjectIds) => {
+    const isBlockActive =
+      selectedSubjectIds.length > 0 &&
+      blockSubjectIds.every((id) => selectedSubjectIds.includes(id));
+    const next = isBlockActive
+      ? selectedSubjectIds.filter((id) => !blockSubjectIds.includes(id))
+      : [...selectedSubjectIds, ...blockSubjectIds];
+    applySubjectSelection(next);
+  };
+
+  const toggleTopicSelection = (topic) => {
+    setSelectedTopicIds((prev) => {
+      if (prev.includes(topic.id)) {
+        return prev.filter((id) => id !== topic.id);
+      }
+      if (topic.parentId && prev.includes(topic.parentId)) {
+        const directCount = directTopicQuestionCounts[topic.parentId] || 0;
+        const withoutParent = prev.filter((id) => id !== topic.parentId);
+        if (directCount === 0) {
+          const siblingIds = (topicHierarchy.childrenByParent[topic.parentId] || [])
+            .map((c) => c.id)
+            .filter((id) => id !== topic.id);
+          return [...new Set([...withoutParent, ...siblingIds])];
+        }
+        return [...withoutParent, topic.id];
+      }
+      if (!topic.parentId) {
+        return [...prev.filter((id) => !id.startsWith(`${topic.id}_`)), topic.id];
+      }
+      return [...prev, topic.id];
+    });
+    setFeedPage(1);
+  };
+
+  const visibleTopicGroups = useMemo(() => {
+    const term = topicFilterQuery.trim().toLowerCase();
+    const subjectsToShow = (OFFICIAL_CMC_SUBJECTS || []).filter(
+      (s) => selectedSubjectIds.length === 0 || selectedSubjectIds.includes(s.id)
+    );
+    return subjectsToShow
+      .map((s) => {
+        const activeTopics = (s.topics || []).filter((t) => (topicQuestionCounts[t.id] || 0) > 0);
+        if (!term) {
+          return {
+            subject: s,
+            topics: activeTopics,
+            selectableIds: activeTopics.filter((t) => !t.parentId).map((t) => t.id)
+          };
+        }
+        const subjectMatch = (s.name || '').toLowerCase().includes(term);
+        const directMatchIds = new Set(
+          activeTopics
+            .filter(
+              (t) =>
+                subjectMatch ||
+                (t.label || '').toLowerCase().includes(term) ||
+                (t.number || '').toLowerCase().includes(term)
+            )
+            .map((t) => t.id)
+        );
+        const contextParentIds = new Set();
+        activeTopics.forEach((t) => {
+          if (t.parentId && directMatchIds.has(t.id)) {
+            contextParentIds.add(t.parentId);
+          }
+        });
+        const filteredTopics = activeTopics.filter(
+          (t) =>
+            directMatchIds.has(t.id) ||
+            contextParentIds.has(t.id) ||
+            (t.parentId && directMatchIds.has(t.parentId))
+        );
+        const matchedIds = activeTopics
+          .filter((t) => directMatchIds.has(t.id) && !(t.parentId && directMatchIds.has(t.parentId)))
+          .map((t) => t.id);
+        return {
+          subject: s,
+          topics: filteredTopics,
+          selectableIds: matchedIds
+        };
+      })
+      .filter((g) => g.topics.length > 0);
+  }, [selectedSubjectIds, topicFilterQuery, topicQuestionCounts]);
+
+  const handleSelectAllVisibleTopics = () => {
+    const idsToAdd = visibleTopicGroups.flatMap((g) => g.selectableIds);
+    if (idsToAdd.length === 0) return;
+    setSelectedTopicIds((prev) => {
+      const topParents = new Set(idsToAdd.filter((id) => !topicHierarchy.topicById[id]?.parentId));
+      const cleanedPrev = prev.filter(
+        (id) => !Array.from(topParents).some((pid) => id.startsWith(`${pid}_`))
+      );
+      return [...new Set([...cleanedPrev, ...idsToAdd])];
+    });
+    setFeedPage(1);
+  };
+
   // Filtragem hierárquica de questões para o Feed Direto e Gerador do App de Questões
   const filteredPool = useMemo(() => {
+    const subjectSet = selectedSubjectIds.length > 0 ? new Set(selectedSubjectIds) : null;
     return ALL_SIMULADO_QUESTIONS.filter((q) => {
-      if (customSubjectId !== 'all' && q.subjectId !== customSubjectId) return false;
-      if (customTopicId !== 'all' && !questionMatchesTopicFilter(q, customTopicId)) return false;
+      if (subjectSet && !subjectSet.has(q.subjectId)) return false;
+      if (
+        selectedTopicIds.length > 0 &&
+        !selectedTopicIds.some((tid) => questionMatchesTopicFilter(q, tid))
+      ) {
+        return false;
+      }
       if (customSource === 'real_only' && !q.isRealSelecon) return false;
       if (customSource === 'ineditas_only' && q.isRealSelecon) return false;
       if (customStatus === 'unanswered' && questionHistory[q.id]) return false;
@@ -618,7 +827,14 @@ export default function SimuladosTab({
       }
       return true;
     });
-  }, [customSubjectId, customTopicId, customSource, customStatus, searchQuery, questionHistory]);
+  }, [
+    selectedSubjectIds,
+    selectedTopicIds,
+    customSource,
+    customStatus,
+    searchQuery,
+    questionHistory
+  ]);
 
   // Estatísticas globais do usuário no Banco de Questões
   const bankStats = useMemo(() => {
@@ -2020,57 +2236,300 @@ export default function SimuladosTab({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                  Disciplina do Edital CMC 2026
-                </label>
-                <select
-                  value={customSubjectId}
-                  onChange={(e) => {
-                    setCustomSubjectId(e.target.value);
-                    setCustomTopicId('all');
-                    setFeedPage(1);
-                  }}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white font-bold"
-                >
-                  <option value="all">Todas as 8 Disciplinas ({ALL_SIMULADO_QUESTIONS.length}q)</option>
-                  {(OFFICIAL_CMC_SUBJECTS || []).map((s) => {
-                    const countInSubj = ALL_SIMULADO_QUESTIONS.filter(
-                      (q) => q.subjectId === s.id
-                    ).length;
+              <div className="sm:col-span-2 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-[11px] font-bold uppercase text-slate-400">
+                    Áreas &amp; Disciplinas do Edital CMC 2026 (Multi-Seleção)
+                  </label>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="text-slate-400 font-semibold">
+                      {selectedSubjectIds.length === 0
+                        ? 'Todas as 8 disciplinas'
+                        : `${selectedSubjectIds.length} selecionada(s)`}
+                    </span>
+                    {selectedSubjectIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => applySubjectSelection([])}
+                        className="text-emerald-300 hover:text-emerald-200 font-bold underline"
+                      >
+                        Todas
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Atalhos rápidos por Área do Edital */}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => applySubjectSelection([])}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition flex items-center gap-1.5 ${
+                      selectedSubjectIds.length === 0
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                        : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    {selectedSubjectIds.length === 0 && <Check className="w-3 h-3" />}
+                    Todas (8) • {ALL_SIMULADO_QUESTIONS.length}q
+                  </button>
+                  {editalAreaBlocks.map((block) => {
+                    const isBlockActive =
+                      selectedSubjectIds.length > 0 &&
+                      block.subjectIds.every((id) => selectedSubjectIds.includes(id));
+                    const blockCount = block.subjectIds.reduce(
+                      (sum, id) => sum + (subjectQuestionCounts[id] || 0),
+                      0
+                    );
                     return (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({countInSubj}q • {Number(s.examPointsPerQuestion || 1).toFixed(2)} pt/q)
-                      </option>
+                      <button
+                        key={block.id}
+                        type="button"
+                        onClick={() => toggleAreaBlock(block.subjectIds)}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition flex items-center gap-1.5 ${
+                          isBlockActive
+                            ? 'bg-indigo-500/25 border-indigo-400 text-indigo-100'
+                            : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                        }`}
+                      >
+                        {isBlockActive && <Check className="w-3 h-3" />}
+                        {block.label} ({blockCount}q)
+                      </button>
                     );
                   })}
-                </select>
+                </div>
+
+                {/* Pills de múltipla seleção por Disciplina */}
+                <div className="flex flex-wrap gap-1.5">
+                  {(OFFICIAL_CMC_SUBJECTS || []).map((s) => {
+                    const isSelected = selectedSubjectIds.includes(s.id);
+                    const countInSubj = subjectQuestionCounts[s.id] || 0;
+                    const shortLabel = subjectShortLabels[s.id] || s.name;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => toggleSubjectSelection(s.id)}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100 shadow-sm'
+                            : 'bg-slate-900/90 border-slate-700 text-slate-300 hover:border-slate-500'
+                        }`}
+                      >
+                        <span
+                          className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
+                            isSelected
+                              ? 'bg-emerald-400 border-emerald-400 text-slate-950'
+                              : 'border-slate-600 bg-slate-950'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </span>
+                        <span>{shortLabel}</span>
+                        <span className="text-[10px] opacity-75 font-semibold">
+                          {countInSubj}q • {Number(s.examPointsPerQuestion || 1).toFixed(2)}pt
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                  Tópico / Item Específico do Anexo V
-                </label>
-                <select
-                  value={customTopicId}
-                  onChange={(e) => {
-                    setCustomTopicId(e.target.value);
-                    setFeedPage(1);
-                  }}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white font-bold"
-                >
-                  <option value="all">Todos os Tópicos da Disciplina</option>
-                  {(OFFICIAL_CMC_SUBJECTS || [])
-                    .filter((s) => customSubjectId === 'all' || s.id === customSubjectId)
-                    .flatMap((s) =>
-                      (s.topics || []).filter((t) => (topicQuestionCounts[t.id] || 0) > 0)
-                    )
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.depth > 0 ? '  ↳ ' : ''}[{t.number}] {t.label} ({topicQuestionCounts[t.id]}q)
-                      </option>
-                    ))}
-                </select>
+              <div className="sm:col-span-2">
+                <div className="rounded-2xl bg-slate-900/80 border border-slate-700/80 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setTopicPickerOpen((prev) => !prev)}
+                    className="w-full px-3 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-slate-800/40 transition"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase text-slate-300">
+                        Tópicos &amp; Subtópicos do Anexo V (Multi-Seleção)
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          selectedTopicIds.length > 0
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {selectedTopicIds.length > 0
+                          ? `${selectedTopicIds.length} marcado(s)`
+                          : 'Todos os tópicos'}
+                      </span>
+                    </div>
+                    {topicPickerOpen ? (
+                      <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                    )}
+                  </button>
+
+                  {selectedTopicIds.length > 0 && (
+                    <div className="px-3 py-2 border-t border-slate-800 bg-slate-950/60 flex flex-wrap items-center gap-1.5">
+                      {selectedTopicIds.map((tid) => {
+                        const topic = topicHierarchy.topicById[tid];
+                        return (
+                          <button
+                            key={tid}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTopicIds((prev) => prev.filter((id) => id !== tid));
+                              setFeedPage(1);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-[11px] font-semibold hover:bg-emerald-500/25 transition max-w-full"
+                            title={topic ? `[${topic.number}] ${topic.label}` : tid}
+                          >
+                            <span className="truncate max-w-[230px]">
+                              {topic ? `[${topic.number}] ${topic.label}` : tid}
+                            </span>
+                            <X className="w-3 h-3 shrink-0" />
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTopicIds([]);
+                          setFeedPage(1);
+                        }}
+                        className="px-2 py-1 rounded-lg text-[11px] font-bold text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 transition"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  )}
+
+                  {topicPickerOpen && (
+                    <div className="border-t border-slate-800">
+                      <div className="p-2.5 bg-slate-900/70 border-b border-slate-800 space-y-2">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={topicFilterQuery}
+                            onChange={(e) => setTopicFilterQuery(e.target.value)}
+                            placeholder="Filtrar tópicos ou subtópicos (ex: Regimento, atos, licitação)..."
+                            className="w-full pl-8 pr-8 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400"
+                          />
+                          {topicFilterQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setTopicFilterQuery('')}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                              aria-label="Limpar busca de tópicos"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <span className="text-slate-400">
+                            Toque nos itens para marcar quantos quiser
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleSelectAllVisibleTopics}
+                              disabled={visibleTopicGroups.length === 0}
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-emerald-300 font-bold transition"
+                            >
+                              Marcar visíveis
+                            </button>
+                            {selectedTopicIds.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedTopicIds([]);
+                                  setFeedPage(1);
+                                }}
+                                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition"
+                              >
+                                Limpar ({selectedTopicIds.length})
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/70">
+                        {visibleTopicGroups.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-slate-400">
+                            Nenhum tópico com questões corresponde à busca atual.
+                          </div>
+                        ) : (
+                          visibleTopicGroups.map(({ subject, topics }) => (
+                            <div key={subject.id}>
+                              <div className="sticky top-0 z-10 px-3 py-1.5 bg-slate-950/95 backdrop-blur border-b border-slate-800/80 flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-extrabold text-slate-300">
+                                  {subject.name}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400 shrink-0">
+                                  {subjectQuestionCounts[subject.id] || 0}q
+                                </span>
+                              </div>
+                              <div className="p-1.5 space-y-1">
+                                {topics.map((t) => {
+                                  const isDirectSelected = selectedTopicIds.includes(t.id);
+                                  const coveringParent =
+                                    t.parentId && selectedTopicIds.includes(t.parentId)
+                                      ? topicHierarchy.topicById[t.parentId]
+                                      : null;
+                                  const isChecked = isDirectSelected || Boolean(coveringParent);
+                                  return (
+                                    <div
+                                      key={t.id}
+                                      className={
+                                        t.depth > 0
+                                          ? 'pl-2.5 ml-2.5 border-l-2 border-slate-700/80'
+                                          : ''
+                                      }
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleTopicSelection(t)}
+                                        className={`w-full text-left flex items-start gap-2.5 px-2.5 py-2 rounded-xl text-xs transition ${
+                                          isChecked
+                                            ? 'bg-emerald-500/15 text-emerald-100 border border-emerald-500/30'
+                                            : 'hover:bg-slate-800/60 text-slate-300 border border-transparent'
+                                        }`}
+                                      >
+                                        <span
+                                          className={`w-4 h-4 mt-0.5 rounded flex items-center justify-center border shrink-0 ${
+                                            isChecked
+                                              ? 'bg-emerald-400 border-emerald-400 text-slate-950'
+                                              : 'border-slate-600 bg-slate-950'
+                                          }`}
+                                        >
+                                          {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                        </span>
+                                        <span className="flex-1 min-w-0 leading-snug">
+                                          <span className="font-bold text-slate-200 mr-1">
+                                            [{t.number}]
+                                          </span>
+                                          <span>{t.label}</span>
+                                          {coveringParent && (
+                                            <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                                              Via [{coveringParent.number}]
+                                            </span>
+                                          )}
+                                        </span>
+                                        <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-slate-800/90 text-[10px] font-bold text-slate-300">
+                                          {topicQuestionCounts[t.id]}q
+                                        </span>
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -2139,12 +2598,18 @@ export default function SimuladosTab({
 
                 <select
                   value={customLimit}
-                  onChange={(e) => setCustomLimit(Number(e.target.value))}
+                  onChange={(e) =>
+                    setCustomLimit(e.target.value === 'all' ? 'all' : Number(e.target.value))
+                  }
                   className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white font-bold"
                 >
+                  <option value="all">Todas as filtradas ({filteredPool.length}q)</option>
+                  <option value={5}>Caderno de 5 questões</option>
                   <option value={10}>Caderno de 10 questões</option>
+                  <option value={15}>Caderno de 15 questões</option>
                   <option value={20}>Caderno de 20 questões</option>
                   <option value={35}>Caderno de 35 questões</option>
+                  <option value={50}>Caderno de 50 questões</option>
                   <option value={70}>Caderno de 70 questões</option>
                 </select>
 
@@ -2152,13 +2617,18 @@ export default function SimuladosTab({
                   type="button"
                   disabled={filteredPool.length === 0}
                   onClick={() => {
+                    const targetCount =
+                      customLimit === 'all'
+                        ? filteredPool.length
+                        : Math.min(customLimit, filteredPool.length);
                     const nb = buildCustomQuestionNotebook(
                       {
-                        subjectIds: customSubjectId === 'all' ? [] : [customSubjectId],
-                        topicIds: customTopicId === 'all' ? [] : [customTopicId],
+                        subjectIds: selectedSubjectIds,
+                        topicIds: selectedTopicIds,
                         sourceFilter: customSource,
                         statusFilter: customStatus,
-                        limit: Math.min(customLimit, filteredPool.length),
+                        searchQuery,
+                        limit: customLimit === 'all' ? 'all' : targetCount,
                         shuffle: true
                       },
                       questionHistory
@@ -2168,7 +2638,11 @@ export default function SimuladosTab({
                   className="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
-                  Gerar Caderno Salvo ({Math.min(customLimit, filteredPool.length)}q)
+                  Iniciar Simulado Tático (
+                  {customLimit === 'all'
+                    ? filteredPool.length
+                    : Math.min(customLimit, filteredPool.length)}
+                  q)
                 </button>
               </div>
             </div>

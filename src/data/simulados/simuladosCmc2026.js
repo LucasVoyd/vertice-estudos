@@ -10,6 +10,9 @@ import { QUESTS_BLOCO_GERAIS } from './blocoGerais.js';
 import { QUESTS_ESPECIFICOS_SIM_01 } from './blocoEspecificosSim1.js';
 import { QUESTS_ESPECIFICOS_SIM_02 } from './blocoEspecificosSim2.js';
 import { QUESTS_ESPECIFICOS_SIM_03 } from './blocoEspecificosSim3.js';
+import { QUESTS_ESPECIFICOS_EXTRAS_01 } from './blocoEspecificosExtras1.js';
+import { QUESTS_ESPECIFICOS_EXTRAS_02 } from './blocoEspecificosExtras2.js';
+import { QUESTS_BASICOS_SIM_04, QUESTS_GERAIS_SIM_04 } from './blocoBasicosGeraisExtras.js';
 import { buildOfficialTecnicoLegislativoSubjects } from '../editalCmc2026Oficial.js';
 
 export const OFFICIAL_CMC_SUBJECTS = buildOfficialTecnicoLegislativoSubjects();
@@ -249,9 +252,32 @@ const NORM_GERAIS = QUESTS_BLOCO_GERAIS.map(normalizeQuestion);
 const NORM_ESP_1 = QUESTS_ESPECIFICOS_SIM_01.map(normalizeQuestion);
 const NORM_ESP_2 = QUESTS_ESPECIFICOS_SIM_02.map(normalizeQuestion);
 const NORM_ESP_3 = QUESTS_ESPECIFICOS_SIM_03.map(normalizeQuestion);
+const NORM_BASICOS_4 = QUESTS_BASICOS_SIM_04.map(normalizeQuestion);
+const NORM_GERAIS_4 = QUESTS_GERAIS_SIM_04.map(normalizeQuestion);
+const NORM_ESP_EXTRAS_1 = QUESTS_ESPECIFICOS_EXTRAS_01.map(normalizeQuestion);
+const NORM_ESP_EXTRAS_2 = QUESTS_ESPECIFICOS_EXTRAS_02.map(normalizeQuestion);
 const NORM_EXTRAS = QUESTS_EXTRAS_SELECON.map(normalizeQuestion);
 
-// Montagem rigorosa dos 3 Simulados Oficiais Completos (70 questões cada = 100,00 pontos)
+function pickEvenlySpacedIndices(total, count) {
+  const picked = new Set();
+  for (let i = 0; i < count; i++) {
+    picked.add(Math.floor((i * total) / count));
+  }
+  return picked;
+}
+
+const SIM4_ESP_1_IDX = pickEvenlySpacedIndices(NORM_ESP_EXTRAS_1.length, 17);
+const SIM4_ESP_2_IDX = pickEvenlySpacedIndices(NORM_ESP_EXTRAS_2.length, 23);
+
+const NORM_ESP_4 = [
+  ...NORM_ESP_EXTRAS_1.filter((_, i) => SIM4_ESP_1_IDX.has(i)),
+  ...NORM_ESP_EXTRAS_2.filter((_, i) => SIM4_ESP_2_IDX.has(i))
+].map((q) => ({ ...q, simuladoIndex: 4 }));
+
+export const QUESTIONS_ESP_EXCLUSIVO_A = NORM_ESP_EXTRAS_1.filter((_, i) => !SIM4_ESP_1_IDX.has(i));
+export const QUESTIONS_ESP_EXCLUSIVO_B = NORM_ESP_EXTRAS_2.filter((_, i) => !SIM4_ESP_2_IDX.has(i));
+
+// Montagem rigorosa dos 4 Simulados Oficiais Completos (70 questões cada = 100,00 pontos)
 // Cada Simulado Oficial possui:
 // - 15 Conhecimentos Básicos (5 Português + 4 RLM + 3 Informática + 3 Legislação Básica = 15,00 pts)
 // - 15 Conhecimentos Gerais (6 Hist/Geo MT + 5 Ética/Filosofia + 4 Relações Interpessoais = 15,00 pts)
@@ -274,11 +300,20 @@ export const QUESTIONS_SIMULADO_03 = [
   ...NORM_ESP_3
 ];
 
-// Banco Completo Unificado (216 questões sem nenhuma repetição)
+export const QUESTIONS_SIMULADO_04 = [
+  ...NORM_BASICOS_4,
+  ...NORM_GERAIS_4,
+  ...NORM_ESP_4
+];
+
+// Banco Completo Unificado (372 questões únicas sem nenhuma repetição)
 export const ALL_SIMULADO_QUESTIONS = [
   ...QUESTIONS_SIMULADO_01,
   ...QUESTIONS_SIMULADO_02,
   ...QUESTIONS_SIMULADO_03,
+  ...QUESTIONS_SIMULADO_04,
+  ...QUESTIONS_ESP_EXCLUSIVO_A,
+  ...QUESTIONS_ESP_EXCLUSIVO_B,
   ...NORM_EXTRAS
 ];
 
@@ -354,14 +389,39 @@ Parágrafo 4 (Conclusão - linhas 24 a 30): Concluir demonstrando como a gestão
 Parágrafo 2 (Desenvolvimento I - linhas 8 a 15): Abordar a importância do rito regimental (Resolução 008/2016), do controle preventivo pela CCJR e da redação legislativa clara e precisa (LC 95/1998) para evitar leis inconstitucionais ou ambíguas.
 Parágrafo 3 (Desenvolvimento II - linhas 16 a 23): Explicar como a gestão arquivística (Plano de Classificação e Tabela de Temporalidade) agiliza a recuperação da informação no arquivo corrente e preserva o patrimônio histórico tricentenário de Cuiabá no arquivo permanente.
 Parágrafo 4 (Conclusão - linhas 24 a 30): Fechar unindo a excelência documental ao atendimento prioritário e urbanidade (Lei 10.048/2000 e Lei 13.460/2017) para consolidar um Parlamento aberto e eficiente.`
+  },
+  disc_04: {
+    id: 'disc_04',
+    title: 'Tema Discursivo #04: Ciclo Orçamentário Municipal, Controle Externo (TCE-MT) e Responsabilidade Fiscal no Legislativo',
+    minLines: 20,
+    maxLines: 30,
+    maxPoints: 100,
+    minPointsToPass: 50,
+    contextText: `A fiscalização contábil, financeira, orçamentária, operacional e patrimonial do Município compete ao Poder Legislativo local mediante controle externo (art. 31 da CF/88), com o auxílio do Tribunal de Contas do Estado de Mato Grosso (TCE-MT). Paralelamente, a Câmara Municipal de Cuiabá participa ativamente da apreciação das peças orçamentárias (PPA, LDO e LOA — art. 165 da CF/88) e submete suas próprias despesas aos limites constitucionais do art. 29-A da Constituição Federal e às normas de execução da Lei nº 4.320/1964.`,
+    promptCommand: `Redija um texto dissertativo-argumentativo, em norma-padrão da língua portuguesa, de 20 (vinte) a 30 (trinta) linhas, abordando obrigatoriamente:
+1. A articulação entre os instrumentos de planejamento orçamentário municipal (PPA, LDO e LOA) e a atuação fiscalizatória da Câmara Municipal;
+2. O papel do controle externo parlamentar auxiliado pelo TCE-MT (parecer prévio sobre as contas anuais do Prefeito e limites do art. 29-A da CF/88);
+3. Medidas técnicas e administrativas de responsabilidade fiscal, protocolo e controle interno para garantir a regularidade dos estágios da despesa pública (empenho, liquidação e pagamento).`,
+    rubricCriteria: [
+      { id: 'c1', label: 'Domínio conceitual sobre PPA, LDO, LOA e participação legislativa no orçamento municipal', maxPts: 30 },
+      { id: 'c2', label: 'Análise jurídica do controle externo (art. 31 da CF/88), papel do TCE-MT e limites do art. 29-A', maxPts: 30 },
+      { id: 'c3', label: 'Articulação prática dos estágios da despesa (Lei 4.320/1964) e controle interno administrativo', maxPts: 20 },
+      { id: 'c4', label: 'Norma-padrão culta, coesão textual e observância estrita do intervalo de 20 a 30 linhas', maxPts: 20 }
+    ],
+    modelGuide: `Parágrafo 1 (Introdução - linhas 1 a 7): Contextualizar o orçamento público como instrumento de concretização de direitos fundamentais e destacar a dupla função da Câmara Municipal de Cuiabá (aprovadora das leis orçamentárias e fiscalizadora de sua execução).
+Parágrafo 2 (Desenvolvimento I - linhas 8 a 15): Explicar a integração entre PPA (planejamento quadrienal), LDO (metas e prioridades anuais) e LOA (previsão de receitas e fixação de despesas), ressaltando o controle prévio das comissões e a vedação ao desvio de finalidade orçamentária.
+Parágrafo 3 (Desenvolvimento II - linhas 16 a 23): Tratar do controle externo (art. 31 CF/88 — parecer prévio do TCE-MT superável apenas por 2/3 dos Vereadores) e do controle interno aplicado aos estágios da despesa (empenho prévio, liquidação rigorosa mediante prova documental e pagamento regular).
+Parágrafo 4 (Conclusão - linhas 24 a 30): Concluir reforçando que a conformidade orçamentária (inclusive o teto do art. 29-A e da LRF) aliada à capacitação dos servidores efetivos assegura transparência e eficiência à gestão cuiabana.`
   }
 };
 
 const QUESTIONS_LEGISLACAO_CUIABA = [
   ...NORM_BASICOS.filter((q) => q.subjectId === 'sub_cmc_leg'),
+  ...NORM_BASICOS_4.filter((q) => q.subjectId === 'sub_cmc_leg'),
   ...NORM_ESP_1.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
   ...NORM_ESP_2.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
   ...NORM_ESP_3.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
+  ...NORM_ESP_EXTRAS_2.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
   ...NORM_EXTRAS.filter((q) => q.subjectId === 'sub_cmc_leg' || questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7'))
 ];
 const LEGISLACAO_CUIABA_PTS = Number(
@@ -372,6 +432,9 @@ const QUESTIONS_REAIS_SELECON = ALL_SIMULADO_QUESTIONS.filter((q) => q.isRealSel
 const REAIS_SELECON_PTS = Number(
   QUESTIONS_REAIS_SELECON.reduce((acc, q) => acc + (Number(q.points) || 1), 0).toFixed(2)
 );
+
+const ESP_EXCLUSIVO_A_PTS = Number((QUESTIONS_ESP_EXCLUSIVO_A.length * 1.75).toFixed(2));
+const ESP_EXCLUSIVO_B_PTS = Number((QUESTIONS_ESP_EXCLUSIVO_B.length * 1.75).toFixed(2));
 
 // ============================================================================
 // CATÁLOGO OFICIAL DE SIMULADOS E CADERNOS TÁTICOS CMC 2026
@@ -419,8 +482,53 @@ export const SIMULADOS_CATALOG = [
     totalPoints: 100,
     minPassPoints: 50,
     discursiva: PROVA_DISCURSIVA_TEMAS.disc_03,
-    description: 'Terceiro simulado completo com mais 70 questões exclusivas (totalizando 210 questões inéditas entre os 3 simulados oficiais). Ideal para testar resistência mental de 4h30min e blindar contra distratores sutis da banca Selecon.',
+    description: 'Terceiro simulado completo com mais 70 questões exclusivas (totalizando 210 questões inéditas entre os 3 primeiros simulados oficiais). Ideal para testar resistência mental de 4h30min e blindar contra distratores sutis da banca Selecon.',
     questions: QUESTIONS_SIMULADO_03
+  },
+  {
+    id: 'sim_oficial_04',
+    code: 'SIMULADO OFICIAL #04',
+    title: '4º Simulado Oficial Completo CMC 2026 — Técnico Legislativo',
+    subtitle: '70 questões 100% inéditas em relação aos Simulados #01, #02 e #03 + Discursiva (100,00 pts)',
+    category: 'oficial_70',
+    badge: 'Padrão Oficial Selecon • 70 Questões Novas',
+    badgeColor: 'cyan',
+    durationMinutes: 270,
+    totalPoints: 100,
+    minPassPoints: 50,
+    discursiva: PROVA_DISCURSIVA_TEMAS.disc_04,
+    description: 'Quarto simulado completo totalmente inédito na proporção oficial do Anexo V: 15 Básicos (incluindo variação linguística, hardware, PowerPoint/Impress e LC 093/2003), 15 Gerais e 40 Específicos de alta complexidade cobrindo todos os 12 tópicos do edital.',
+    questions: QUESTIONS_SIMULADO_04
+  },
+  {
+    id: 'sim_esp_exclusivo_a',
+    code: 'ARSENAL ESPECÍFICOS #05A',
+    title: `Bateria Exclusiva Específicos I — Direito, Gestão & Constituição (${QUESTIONS_ESP_EXCLUSIVO_A.length} Questões)`,
+    subtitle: `Questões inéditas exclusivas dos Itens 1 a 5 (zero repetição com os Simulados #01 a #04 • ${ESP_EXCLUSIVO_A_PTS} pts)`,
+    category: 'tatico',
+    badge: `100% Exclusivo • Peso 1,75x • ${QUESTIONS_ESP_EXCLUSIVO_A.length}q`,
+    badgeColor: 'rose',
+    durationMinutes: 160,
+    totalPoints: ESP_EXCLUSIVO_A_PTS,
+    minPassPoints: Number((ESP_EXCLUSIVO_A_PTS * 0.5).toFixed(2)),
+    discursiva: null,
+    description: 'Bateria avançada exclusiva focada na metade jurídica e administrativa de Conhecimentos Específicos (Itens 1 a 5: Modelos de Gestão, Organização Administrativa, Poderes, Atos, Controle/TCE, Responsabilidade Civil, Direitos Fundamentais e Arts. 37–41 da CF). Nenhuma questão desta bateria aparece nos Simulados #01 a #04.',
+    questions: QUESTIONS_ESP_EXCLUSIVO_A
+  },
+  {
+    id: 'sim_esp_exclusivo_b',
+    code: 'ARSENAL ESPECÍFICOS #05B',
+    title: `Bateria Exclusiva Específicos II — Legislativo, Redação, Arquivo & Orçamento (${QUESTIONS_ESP_EXCLUSIVO_B.length} Questões)`,
+    subtitle: `Questões inéditas exclusivas dos Itens 6 a 12 (zero repetição com os Simulados #01 a #04 • ${ESP_EXCLUSIVO_B_PTS} pts)`,
+    category: 'tatico',
+    badge: `100% Exclusivo • Peso 1,75x • ${QUESTIONS_ESP_EXCLUSIVO_B.length}q`,
+    badgeColor: 'amber',
+    durationMinutes: 160,
+    totalPoints: ESP_EXCLUSIVO_B_PTS,
+    minPassPoints: Number((ESP_EXCLUSIVO_B_PTS * 0.5).toFixed(2)),
+    discursiva: null,
+    description: 'Segunda bateria avançada exclusiva cobrindo os Itens 6 a 12 do Anexo V: Câmara de Cuiabá (Res. 008/2016 e LOM), Processo Legislativo e LC 95/1998, Manual de Redação da Presidência 3ª ed., Arquivologia/LAI/Protocolo, Atendimento Público, Orçamento/Lei 4.320/1964 e Segurança do Trabalho (NRs). Zero sobreposição com os Simulados #01 a #04.',
+    questions: QUESTIONS_ESP_EXCLUSIVO_B
   },
   {
     id: 'sim_sprint_35',

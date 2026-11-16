@@ -1984,7 +1984,7 @@ export default function SimuladosTab({
         <div className="grid grid-cols-3 gap-2 pt-1">
           {[
             { id: 'catalogo', label: 'Simulados (70q & Táticos)', icon: Award },
-            { id: 'app_questoes', label: 'App de Questões (216q)', icon: Layers },
+            { id: 'app_questoes', label: `App de Questões (${ALL_SIMULADO_QUESTIONS.length}q)`, icon: Layers },
             { id: 'historico', label: `Boletins (${completedList.length})`, icon: TrendingUp }
           ].map((t) => {
             const Icon = t.icon;

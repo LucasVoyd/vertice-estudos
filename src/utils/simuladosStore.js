@@ -304,10 +304,35 @@ export function saveFeedPracticeState(feedState, profileOverride) {
 }
 
 /**
+ * Retorna a lista de chaves de perfis conhecidas (padrões + quaisquer perfis extras salvos no estado global).
+ */
+function getKnownProfileIds() {
+  const base = new Set(['lucas', 'milayne', 'guilherme']);
+  try {
+    const raw = localStorage.getItem(APP_STATE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.profiles && typeof parsed.profiles === 'object') {
+        Object.keys(parsed.profiles).forEach((k) => {
+          const normalized = String(k || '').trim().toLowerCase();
+          if (normalized) base.add(normalized);
+        });
+      }
+      if (typeof parsed?.activeProfile === 'string' && parsed.activeProfile.trim()) {
+        base.add(parsed.activeProfile.trim().toLowerCase());
+      }
+    }
+  } catch {
+    // fallback silencioso
+  }
+  return Array.from(base);
+}
+
+/**
  * Exporta todos os dados de simulados e questões (todos os perfis) para compor o Backup JSON / Nuvem Supabase.
  */
 export function exportAllSimuladosStorage() {
-  const profiles = ['lucas', 'milayne'];
+  const profiles = getKnownProfileIds();
   const bundle = {};
   profiles.forEach((p) => {
     bundle[p] = {
@@ -325,8 +350,10 @@ export function exportAllSimuladosStorage() {
  */
 export function importAllSimuladosStorage(bundle) {
   if (!bundle || typeof bundle !== 'object') return;
-  ['lucas', 'milayne'].forEach((p) => {
-    const data = bundle[p];
+  Object.keys(bundle).forEach((rawKey) => {
+    const p = String(rawKey || '').trim().toLowerCase();
+    if (!p) return;
+    const data = bundle[rawKey];
     if (!data || typeof data !== 'object') return;
     if (data.activeAttempts && typeof data.activeAttempts === 'object') {
       saveActiveSimuladoAttempts(data.activeAttempts, p);

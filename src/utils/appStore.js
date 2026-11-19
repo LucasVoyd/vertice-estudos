@@ -221,6 +221,12 @@ function buildCreaMtSeedPlan() {
   };
 }
 
+export const DEFAULT_PROFILES = {
+  lucas: { name: 'Lucas', color: '#10b981' },
+  milayne: { name: 'Milayne', color: '#ec4899' },
+  guilherme: { name: 'Guilherme', color: '#38bdf8' }
+};
+
 export function createInitialAppState() {
   const cmcPlan = buildCmc2026SeedPlan();
   const creaPlan = buildCreaMtSeedPlan();
@@ -228,10 +234,7 @@ export function createInitialAppState() {
   return {
     version: CURRENT_SCHEMA_VERSION,
     activeProfile: 'lucas',
-    profiles: {
-      lucas: { name: 'Lucas', color: '#10b981' },
-      milayne: { name: 'Milayne', color: '#ec4899' }
-    },
+    profiles: { ...DEFAULT_PROFILES },
     selectedPlanId: cmcPlan.id,
     plans: [cmcPlan, creaPlan],
     studyLogs: [], // Registros de sessões de estudo (cronômetro ou manual)
@@ -302,6 +305,21 @@ export function loadAppState() {
       return updatedLog;
     });
 
+    // Garante que os perfis padrão (Lucas, Milayne e Guilherme) existam mesmo em estados antigos
+    const existingProfiles =
+      parsed.profiles && typeof parsed.profiles === 'object' && !Array.isArray(parsed.profiles)
+        ? parsed.profiles
+        : {};
+    const mergedProfiles = { ...DEFAULT_PROFILES, ...existingProfiles };
+    if (Object.keys(mergedProfiles).length !== Object.keys(existingProfiles).length) {
+      changed = true;
+    }
+    const safeActiveProfile =
+      parsed.activeProfile && mergedProfiles[parsed.activeProfile] ? parsed.activeProfile : 'lucas';
+    if (safeActiveProfile !== parsed.activeProfile) {
+      changed = true;
+    }
+
     // Migração automática para o Edital Nº 001/2026-CMC Oficial Retificado (v4)
     if (parsed.version !== CURRENT_SCHEMA_VERSION) {
       const freshCmcPlan = buildCmc2026SeedPlan();
@@ -313,6 +331,8 @@ export function loadAppState() {
       const migratedState = {
         ...parsed,
         version: CURRENT_SCHEMA_VERSION,
+        activeProfile: safeActiveProfile,
+        profiles: mergedProfiles,
         plans: migratedPlans,
         studyLogs: sanitizedLogs,
         reminders: [
@@ -335,7 +355,12 @@ export function loadAppState() {
     }
 
     if (changed) {
-      const updatedState = { ...parsed, studyLogs: sanitizedLogs };
+      const updatedState = {
+        ...parsed,
+        activeProfile: safeActiveProfile,
+        profiles: mergedProfiles,
+        studyLogs: sanitizedLogs
+      };
       saveAppState(updatedState);
       return updatedState;
     }

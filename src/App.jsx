@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Home,
   FileText,
@@ -11,9 +11,13 @@ import {
   Play,
   Pause,
   Clock,
-  Award
+  Award,
+  Check,
+  ChevronDown,
+  UserPlus,
+  Trash2
 } from 'lucide-react';
-import { loadAppState, saveAppState } from './utils/appStore';
+import { loadAppState, saveAppState, DEFAULT_PROFILES } from './utils/appStore';
 import { linesToTopicsTree, generateStudyCycle, calculateSubjectWeight } from './utils/editalParser';
 import { getLocalDateIso } from './utils/dateUtils';
 import {
@@ -51,10 +55,105 @@ export default function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [preselectedStudy, setPreselectedStudy] = useState(null);
   const [initialSimuladoId, setInitialSimuladoId] = useState(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [addingProfile, setAddingProfile] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const profileMenuRef = useRef(null);
 
   useEffect(() => {
     saveAppState(state);
   }, [state]);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return undefined;
+    const handleOutside = event => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setProfileMenuOpen(false);
+        setAddingProfile(false);
+        setNewProfileName('');
+      }
+    };
+    const handleEscape = event => {
+      if (event.key === 'Escape') {
+        setProfileMenuOpen(false);
+        setAddingProfile(false);
+        setNewProfileName('');
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [profileMenuOpen]);
+
+  const profilesMap =
+    state.profiles && typeof state.profiles === 'object'
+      ? { ...DEFAULT_PROFILES, ...state.profiles }
+      : { ...DEFAULT_PROFILES };
+  const activeProfileKey = profilesMap[state.activeProfile] ? state.activeProfile : 'lucas';
+  const activeProfileObj = profilesMap[activeProfileKey] || DEFAULT_PROFILES.lucas;
+
+  const handleSelectProfile = profileId => {
+    setState(prev => ({
+      ...prev,
+      activeProfile: profileId
+    }));
+    setProfileMenuOpen(false);
+    setAddingProfile(false);
+    setNewProfileName('');
+  };
+
+  const handleAddProfile = event => {
+    event.preventDefault();
+    const cleanedName = newProfileName.trim();
+    if (!cleanedName) return;
+    const baseSlug =
+      cleanedName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '') || `perfil_${Date.now()}`;
+
+    const palette = ['#a78bfa', '#f59e0b', '#06b6d4', '#f43f5e', '#84cc16', '#fb923c'];
+    setState(prev => {
+      const currentProfiles = { ...DEFAULT_PROFILES, ...prev.profiles };
+      let candidateId = baseSlug;
+      let suffix = 2;
+      while (currentProfiles[candidateId]) {
+        candidateId = `${baseSlug}_${suffix}`;
+        suffix += 1;
+      }
+      const nextColor = palette[Object.keys(currentProfiles).length % palette.length];
+      return {
+        ...prev,
+        activeProfile: candidateId,
+        profiles: {
+          ...currentProfiles,
+          [candidateId]: { name: cleanedName, color: nextColor }
+        }
+      };
+    });
+    setProfileMenuOpen(false);
+    setAddingProfile(false);
+    setNewProfileName('');
+  };
+
+  const handleDeleteProfile = profileId => {
+    if (DEFAULT_PROFILES[profileId] || profileId === activeProfileKey) return;
+    setState(prev => {
+      const nextProfiles = { ...prev.profiles };
+      delete nextProfiles[profileId];
+      return {
+        ...prev,
+        profiles: nextProfiles
+      };
+    });
+  };
 
   // Registra o Service Worker do PWA ao iniciar
   useEffect(() => {
@@ -594,20 +693,117 @@ export default function App() {
               <Bell className="w-5 h-5 fill-current" />
             </button>
 
-            {/* Alternador de Perfil (Lucas / Milayne) */}
-            <button
-              type="button"
-              onClick={() =>
-                setState(prev => ({
-                  ...prev,
-                  activeProfile: prev.activeProfile === 'lucas' ? 'milayne' : 'lucas'
-                }))
-              }
-              title="Alternar perfil (Lucas / Milayne)"
-              className="px-3 py-1 rounded-full bg-emerald-400 text-[#1a1d2e] font-extrabold text-xs uppercase tracking-wider shadow"
-            >
-              {state.profiles?.[state.activeProfile]?.name || 'Lucas'}
-            </button>
+            {/* Seletor de Perfil (Lucas, Milayne, Guilherme e perfis adicionais) */}
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileMenuOpen(open => !open);
+                  setAddingProfile(false);
+                }}
+                title="Trocar perfil de estudo"
+                style={{ backgroundColor: activeProfileObj.color || '#10b981' }}
+                className="px-3 py-1 rounded-full text-[#1a1d2e] font-extrabold text-xs uppercase tracking-wider shadow flex items-center gap-1 hover:brightness-105 transition"
+              >
+                <span className="max-w-[92px] truncate">{activeProfileObj.name}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {profileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#1a1d2e] border border-slate-700/90 shadow-2xl p-2 z-50 space-y-1">
+                  <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Trocar Perfil
+                  </div>
+
+                  <div className="space-y-1 max-h-60 overflow-y-auto">
+                    {Object.entries(profilesMap).map(([id, prof]) => {
+                      const isActive = id === activeProfileKey;
+                      const isCustom = !DEFAULT_PROFILES[id];
+                      return (
+                        <div
+                          key={id}
+                          className={`flex items-center justify-between gap-1 rounded-xl transition ${
+                            isActive
+                              ? 'bg-slate-800/90 border border-slate-600/80'
+                              : 'hover:bg-slate-800/50 border border-transparent'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleSelectProfile(id)}
+                            className="flex-1 flex items-center gap-2.5 px-2.5 py-2 text-left text-xs font-bold text-slate-100"
+                          >
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: prof?.color || '#10b981' }}
+                            />
+                            <span className="flex-1 truncate">{prof?.name || id}</span>
+                            {isActive && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                          </button>
+
+                          {isCustom && !isActive && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProfile(id)}
+                              title={`Remover perfil ${prof?.name || id}`}
+                              className="p-2 text-slate-500 hover:text-rose-400 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="pt-1 mt-1 border-t border-slate-800">
+                    {addingProfile ? (
+                      <form onSubmit={handleAddProfile} className="p-1 space-y-1.5">
+                        <input
+                          type="text"
+                          value={newProfileName}
+                          onChange={e => setNewProfileName(e.target.value)}
+                          placeholder="Nome do perfil..."
+                          maxLength={24}
+                          autoFocus
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400"
+                        />
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="submit"
+                            disabled={!newProfileName.trim()}
+                            className="flex-1 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 text-slate-950 font-extrabold text-[11px]"
+                          >
+                            Adicionar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddingProfile(false);
+                              setNewProfileName('');
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-bold"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAddingProfile(true)}
+                        className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800/60 transition"
+                      >
+                        <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Adicionar outro perfil</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

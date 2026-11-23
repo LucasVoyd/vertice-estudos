@@ -1,7 +1,8 @@
 // Edital Verticalizado 100% Fiel ao Anexo V do Edital Nº 001/2026-CMC (Retificado em 04/11/2026)
 // Com Cascata Pai-Filho (_cascadeLocal), Seletor Rápido de Domínio/Peso, Colagem de Edital e Pílula Teórica + Questões Selecon
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  Activity,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -13,6 +14,8 @@ import {
 } from 'lucide-react';
 import { PasteEditalModal } from './EditalWizardModal';
 import { getKnowledgeBadge } from './CycleTab';
+import { loadQuestionHistory } from '../utils/simuladosStore';
+import { computePlanProficiency } from '../utils/proficiencyEngine';
 
 function formatHoursMins(mins) {
   const m = Math.max(0, Math.round(mins || 0));
@@ -22,17 +25,37 @@ function formatHoursMins(mins) {
 }
 
 export default function EditalVerticalTab({
+  state,
   plan,
+  activeProfile = 'lucas',
   onToggleTopicCascade,
   onPasteTopicsIntoSubject,
   onQuickChangeSubjectKnowledge,
-  onOpenStudyForTopic
+  onOpenStudyForTopic,
+  onOpenProficiency
 }) {
   const [selectedSubjectId, setSelectedSubjectId] = useState(null);
   const [expandedParents, setExpandedParents] = useState({});
   const [pasteSubject, setPasteSubject] = useState(null);
   const [activeTheoryTopic, setActiveTheoryTopic] = useState(null);
   const [quizAnswers, setQuizAnswers] = useState({});
+
+  const questionHistory = useMemo(() => loadQuestionHistory(activeProfile), [activeProfile]);
+  const { profSubjectMap, profTopicMap } = useMemo(() => {
+    const rep = computePlanProficiency({
+      plan,
+      activeProfile,
+      questionHistory,
+      studyLogs: state?.studyLogs || []
+    });
+    const sMap = new Map();
+    const tMap = new Map();
+    rep.subjects.forEach(s => {
+      sMap.set(s.id, s);
+      s.topics.forEach(t => tMap.set(`${s.id}::${t.id}`, t));
+    });
+    return { profSubjectMap: sMap, profTopicMap: tMap };
+  }, [plan, activeProfile, questionHistory, state?.studyLogs]);
 
   if (!plan) return null;
 
@@ -74,15 +97,27 @@ export default function EditalVerticalTab({
             Anexo V Oficial Consolidado com a Retificação Nº 01/2026 (Prova: 20/12/2026)
           </p>
         </div>
-        {activeSubject && (
-          <button
-            type="button"
-            onClick={() => setSelectedSubjectId(null)}
-            className="text-xs font-bold text-emerald-400 hover:underline"
-          >
-            ← Voltar para todas as disciplinas
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenProficiency && (
+            <button
+              type="button"
+              onClick={onOpenProficiency}
+              className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-200 font-bold text-xs flex items-center gap-1.5"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Níveis 1•2•3
+            </button>
+          )}
+          {activeSubject && (
+            <button
+              type="button"
+              onClick={() => setSelectedSubjectId(null)}
+              className="text-xs font-bold text-emerald-400 hover:underline"
+            >
+              ← Voltar para todas as disciplinas
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Card Progresso no Edital + Quadro Oficial de Pontos */}
@@ -156,10 +191,11 @@ export default function EditalVerticalTab({
               const subTopicsCount = sTopics.filter(t => t.depth > 0).length;
               const sDone = sTopics.filter(t => t.finished).length;
               const sPct = sTopics.length > 0 ? Math.round((sDone / sTopics.length) * 100) : 0;
-              const qHit = sTopics.reduce((a, t) => a + (t.questionsHit || 0), 0);
-              const qMiss = sTopics.reduce((a, t) => a + (t.questionsMiss || 0), 0);
+              const profSubj = profSubjectMap.get(subj.id);
+              const qHit = profSubj ? profSubj.stats.hits : sTopics.reduce((a, t) => a + (t.questionsHit || 0), 0);
+              const qMiss = profSubj ? profSubj.stats.misses : sTopics.reduce((a, t) => a + (t.questionsMiss || 0), 0);
               const qTotal = qHit + qMiss;
-              const qPct = qTotal > 0 ? Math.round((qHit / qTotal) * 100) : 0;
+              const qPct = profSubj ? profSubj.stats.pctDisplay : qTotal > 0 ? `${Math.round((qHit / qTotal) * 100)}%` : '0%';
               const cycleMins = cycleMinsBySubject.get(subj.id) || 0;
               const badge = getKnowledgeBadge(subj.knowledge);
 
@@ -239,12 +275,24 @@ export default function EditalVerticalTab({
                       <span className="text-slate-400 uppercase font-bold block text-[10px]">
                         TOTAL DE QUESTÕES: {qTotal} • {badge.label}
                       </span>
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex flex-wrap items-center gap-2.5">
                         <span className="text-emerald-400 font-bold">✓ {qHit}</span>
                         <span className="text-rose-400 font-bold">✗ {qMiss}</span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[11px]">
-                          {qPct}%
-                        </span>
+                        {qTotal > 0 ? (
+                          <span
+                            className={`px-2 py-0.5 rounded-full border font-bold text-[11px] ${
+                              profSubj?.stats?.badgeClass ||
+                              'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            }`}
+                          >
+                            {profSubj?.stats?.level > 0 ? `${profSubj.stats.badge} • ` : ''}
+                            {qPct}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-bold text-[11px]">
+                            0q
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -331,8 +379,18 @@ export default function EditalVerticalTab({
                 return null;
               }
               const isExpanded = expandedParents[topic.id] !== false;
-              const qTotal = (topic.questionsHit || 0) + (topic.questionsMiss || 0);
-              const qPct = qTotal > 0 ? Math.round(((topic.questionsHit || 0) / qTotal) * 100) : 0;
+              const profTopic = profTopicMap.get(`${activeSubject.id}::${topic.id}`);
+              const qHit = profTopic
+                ? profTopic.stats.hits
+                : topic.questionsHit || 0;
+              const qTotal = profTopic
+                ? profTopic.stats.total
+                : (topic.questionsHit || 0) + (topic.questionsMiss || 0);
+              const qPct = profTopic
+                ? profTopic.stats.pctDisplay
+                : qTotal > 0
+                  ? `${Math.round(((topic.questionsHit || 0) / qTotal) * 100)}%`
+                  : '0%';
 
               return (
                 <div
@@ -388,8 +446,14 @@ export default function EditalVerticalTab({
 
                   <div className="flex items-center gap-2">
                     {qTotal > 0 && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-emerald-300 font-bold">
-                        {topic.questionsHit}/{qTotal} ({qPct}%)
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full border font-bold ${
+                          profTopic?.stats?.badgeClass ||
+                          'bg-slate-800 text-emerald-300 border-slate-700'
+                        }`}
+                      >
+                        {profTopic?.stats?.level > 0 ? `${profTopic.stats.shortBadge} • ` : ''}
+                        {qHit}/{qTotal} ({qPct})
                       </span>
                     )}
 

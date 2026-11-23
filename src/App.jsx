@@ -39,6 +39,8 @@ import StudyRegisterTab from './components/StudyRegisterTab';
 import CycleTab from './components/CycleTab';
 import MoreHubTab from './components/MoreHubTab';
 import SimuladosTab from './components/SimuladosTab';
+import ProficiencyTab from './components/ProficiencyTab';
+import ExportReportModal from './components/ExportReportModal';
 import { NewPlanWizardModal } from './components/EditalWizardModal';
 
 export default function App() {
@@ -55,6 +57,8 @@ export default function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [preselectedStudy, setPreselectedStudy] = useState(null);
   const [initialSimuladoId, setInitialSimuladoId] = useState(null);
+  const [feedFilterRequest, setFeedFilterRequest] = useState(null);
+  const [proficiencyExportOpen, setProficiencyExportOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [addingProfile, setAddingProfile] = useState(false);
   const [newProfileName, setNewProfileName] = useState('');
@@ -829,6 +833,7 @@ export default function App() {
               setActiveTab('estudo');
             }}
             onNavigateTab={tab => setActiveTab(tab)}
+            onOpenProficiency={() => setActiveTab('proficiencia')}
             onOpenSimulado={simId => {
               setInitialSimuladoId(simId);
               setActiveTab('simulados');
@@ -846,7 +851,9 @@ export default function App() {
 
         {activeTab === 'edital' && (
           <EditalVerticalTab
+            state={state}
             plan={currentPlan}
+            activeProfile={state.activeProfile || 'lucas'}
             onToggleTopicCascade={handleToggleTopicCascade}
             onPasteTopicsIntoSubject={handlePasteTopicsIntoSubject}
             onQuickChangeSubjectKnowledge={(subjectId, newKnowledge) =>
@@ -870,6 +877,30 @@ export default function App() {
               setPreselectedStudy({ subjectId, topicId, openForm: true });
               setActiveTab('estudo');
             }}
+            onOpenProficiency={() => setActiveTab('proficiencia')}
+          />
+        )}
+
+        {activeTab === 'proficiencia' && (
+          <ProficiencyTab
+            state={state}
+            plan={currentPlan}
+            activeProfile={state.activeProfile || 'lucas'}
+            onNavigateTab={tab => setActiveTab(tab)}
+            onOpenExportModal={() => setProficiencyExportOpen(true)}
+            onOpenStudyForTopic={(subjectId, topicId) => {
+              setPreselectedStudy({ subjectId, topicId, openForm: true });
+              setActiveTab('estudo');
+            }}
+            onTrainTopic={({ subjectIds, topicIds, statusFilter }) => {
+              setFeedFilterRequest({
+                requestId: `prof_req_${Date.now()}`,
+                subjectIds: subjectIds || [],
+                topicIds: topicIds || [],
+                statusFilter: statusFilter || 'all'
+              });
+              setActiveTab('simulados');
+            }}
           />
         )}
 
@@ -880,6 +911,9 @@ export default function App() {
             simulados={state.simulados || []}
             initialSimuladoId={initialSimuladoId}
             onClearInitialSimulado={() => setInitialSimuladoId(null)}
+            feedFilterRequest={feedFilterRequest}
+            onClearFeedFilterRequest={() => setFeedFilterRequest(null)}
+            onOpenProficiency={() => setActiveTab('proficiencia')}
             onAddSimulado={sim =>
               setState(prev => ({
                 ...prev,
@@ -1063,7 +1097,10 @@ export default function App() {
       )}
 
       {/* Botão Flutuante Verde (Quick Register) fiel aos prints */}
-      {activeTab !== 'estudo' && activeTab !== 'simulados' && !hasActiveTimerSession && (
+      {activeTab !== 'estudo' &&
+        activeTab !== 'simulados' &&
+        activeTab !== 'proficiencia' &&
+        !hasActiveTimerSession && (
         <button
           type="button"
           onClick={() => {
@@ -1133,6 +1170,14 @@ export default function App() {
             setActiveTab('planejamento');
           }}
           onClose={() => setWizardOpen(false)}
+        />
+      )}
+
+      {proficiencyExportOpen && (
+        <ExportReportModal
+          state={state}
+          plan={currentPlan}
+          onClose={() => setProficiencyExportOpen(false)}
         />
       )}
     </div>

@@ -1,6 +1,6 @@
 // Menu "Ver mais" fiel ao print 14:
 // Revisões, Planos de Estudo, Disciplinas, Estatísticas, Histórico Completo (com Anotações e Edição), Simulados, Lembretes, Conquistas + Nuvem Supabase
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   RefreshCw,
   ListChecks,
@@ -31,8 +31,10 @@ import {
 } from '../utils/appStore';
 import {
   exportAllSimuladosStorage,
-  importAllSimuladosStorage
+  importAllSimuladosStorage,
+  loadQuestionHistory
 } from '../utils/simuladosStore';
+import { computePlanProficiency } from '../utils/proficiencyEngine';
 import { getLocalDateIso, formatBrazilianDate } from '../utils/dateUtils';
 import EditStudyLogModal from './EditStudyLogModal';
 import ExportReportModal from './ExportReportModal';
@@ -72,6 +74,19 @@ export default function MoreHubTab({
   const [sbCfg, setSbCfg] = useState(() => getSupabaseConfig());
   const [probeStatus, setProbeStatus] = useState(null);
   const [syncMessage, setSyncMessage] = useState('');
+
+  const activeProfile = state?.activeProfile || 'lucas';
+  const questionHistory = useMemo(() => loadQuestionHistory(activeProfile), [activeProfile]);
+  const proficiencyReport = useMemo(
+    () =>
+      computePlanProficiency({
+        plan,
+        activeProfile,
+        questionHistory,
+        studyLogs: state?.studyLogs || []
+      }),
+    [plan, activeProfile, questionHistory, state?.studyLogs]
+  );
 
   if (!plan) return null;
 
@@ -178,6 +193,15 @@ export default function MoreHubTab({
 
   const menuItems = [
     {
+      id: 'proficiencia',
+      label: 'Matriz de Proficiência (Níveis 1, 2 e 3)',
+      badge:
+        proficiencyReport.global.level > 0 ? proficiencyReport.global.shortBadge : 'Novo',
+      icon: Activity,
+      highlight: true,
+      onClick: () => onNavigateTab && onNavigateTab('proficiencia')
+    },
+    {
       id: 'exportar_ia',
       label: 'Exportar Relatório p/ Gemini (IA)',
       icon: Sparkles,
@@ -261,11 +285,12 @@ export default function MoreHubTab({
                     {it.label}
                   </span>
                 </div>
-                {it.badge !== undefined && it.badge > 0 && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">
-                    {it.badge}
-                  </span>
-                )}
+                {it.badge !== undefined &&
+                  (typeof it.badge === 'string' ? it.badge.length > 0 : it.badge > 0) && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">
+                      {it.badge}
+                    </span>
+                  )}
               </button>
             );
           })}
@@ -544,38 +569,58 @@ export default function MoreHubTab({
             <h2 className="text-xl font-extrabold text-emerald-400">
               Estatísticas por Disciplina
             </h2>
-            <button
-              type="button"
-              onClick={() => setExportModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Exportar p/ Gemini
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {onNavigateTab && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('proficiencia')}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs flex items-center gap-1.5"
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  Ver Tópicos (Níveis 1•2•3) →
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setExportModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Exportar p/ Gemini
+              </button>
+            </div>
           </div>
           <div className="space-y-2.5">
-            {(plan.subjects || []).map(s => {
-              const sTopics = s.topics || [];
-              const hit = sTopics.reduce((a, t) => a + (t.questionsHit || 0), 0);
-              const miss = sTopics.reduce((a, t) => a + (t.questionsMiss || 0), 0);
-              const tot = hit + miss;
-              const pct = tot > 0 ? Math.round((hit / tot) * 100) : 0;
+            {proficiencyReport.subjects.map(profSubj => {
+              const rawSubj = (plan.subjects || []).find(item => item.id === profSubj.id);
+              const sTopics = rawSubj?.topics || [];
               const mins = sTopics.reduce((a, t) => a + (t.studiedMinutes || 0), 0);
+              const st = profSubj.stats;
               return (
                 <div
-                  key={s.id}
+                  key={profSubj.id}
                   className="p-4 rounded-xl bg-[#2c3148] border border-slate-700/60 space-y-2"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-white text-sm">{s.name}</span>
-                    <span className="text-xs text-emerald-400 font-bold">
-                      {Math.floor(mins / 60)}h{(mins % 60).toString().padStart(2, '0')}m • {pct}% acerto
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white text-sm">{profSubj.name}</span>
+                      {st.level > 0 && (
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${st.badgeClass}`}
+                        >
+                          {st.badge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-slate-300 font-bold">
+                      {Math.floor(mins / 60)}h{(mins % 60).toString().padStart(2, '0')}m •{' '}
+                      {st.total > 0 ? `${st.hits}/${st.total} (${st.pctDisplay})` : '0q'}
                     </span>
                   </div>
                   <div className="w-full h-2.5 bg-[#1e2235] rounded-full overflow-hidden">
                     <div
-                      className="h-full"
-                      style={{ width: `${pct}%`, backgroundColor: s.color }}
+                      className={`h-full ${st.total > 0 ? st.barClass : 'bg-slate-600'}`}
+                      style={{ width: `${st.total > 0 ? st.pctRounded : 0}%` }}
                     />
                   </div>
                 </div>

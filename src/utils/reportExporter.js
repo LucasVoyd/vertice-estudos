@@ -10,6 +10,7 @@ import {
   getAttemptElapsedSeconds
 } from './simuladosStore.js';
 import { ALL_SIMULADO_QUESTIONS } from '../data/simulados/simuladosCmc2026.js';
+import { computePlanProficiency } from './proficiencyEngine.js';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -799,9 +800,50 @@ export function generateAiPerformanceReport({
   }
   lines.push('');
 
-  // SEÇÃO 8: PANORAMA DO EDITAL VERTICALIZADO E PONTOS CEGOS
+  // SEÇÃO 8: MATRIZ DE PROFICIÊNCIA (NÍVEIS 1, 2 E 3) + EDITAL VERTICALIZADO
+  const proficiency = computePlanProficiency({
+    plan: activePlan,
+    activeProfile: profileKey,
+    questionHistory: rawQuestionHistory,
+    studyLogs: state?.studyLogs || []
+  });
+
+  if (proficiency.global.total > 0) {
+    lines.push(
+      `## 8. Matriz de Proficiência por Tópicos (Níveis 1 <50% | 2 50-79% | 3 >=80%)`
+    );
+    lines.push(
+      `- **Placar Unificado (App + Estudo Manual):** **${proficiency.global.hits}/${proficiency.global.total} acertos (${proficiency.global.pctDisplay}) — ${proficiency.global.badge}** (Nota ponderada pelos pesos do edital: **${proficiency.global.weightedPct}%**)`
+    );
+    lines.push(
+      `- **Distribuição dos tópicos avaliados:** Nível 1 (Crítico): ${proficiency.global.levelCounts.l1} | Nível 2 (Em evolução): ${proficiency.global.levelCounts.l2} | Nível 3 (Bom/Manter): ${proficiency.global.levelCounts.l3} | Não avaliados: ${proficiency.global.levelCounts.l0}`
+    );
+    if (proficiency.priorities.length > 0) {
+      lines.push(`- **Prioridades Urgentes (Nível 1 e 2 ordenados por peso × urgência):**`);
+      proficiency.priorities.slice(0, 15).forEach(node => {
+        lines.push(
+          `  - **[${node.stats.badge}]** ${node.subjectName} — ${
+            node.number ? `[${node.number}] ` : ''
+          }${node.label}: **${node.stats.hits}/${node.stats.total} (${node.stats.pctDisplay})**`
+        );
+      });
+    }
+    if (proficiency.strengths.length > 0) {
+      lines.push(`- **Pontos Dominados (Nível 3 — Só Manter):**`);
+      proficiency.strengths.slice(0, 12).forEach(node => {
+        lines.push(
+          `  - **[Nível 3]** ${node.subjectName} — ${
+            node.number ? `[${node.number}] ` : ''
+          }${node.label}: **${node.stats.hits}/${node.stats.total} (${node.stats.pctDisplay})**`
+        );
+      });
+    }
+    lines.push('');
+  }
+
+  // SEÇÃO 8B: PANORAMA DO EDITAL VERTICALIZADO E PONTOS CEGOS
   if (includePendingTopics && subjects.length > 0) {
-    lines.push(`## 8. Raio-X do Edital Verticalizado (Tópicos Concluídos, Fracos e Nunca Vistos)`);
+    lines.push(`## 8B. Raio-X do Edital Verticalizado (Tópicos Concluídos, Fracos e Nunca Vistos)`);
     subjects.forEach(subj => {
       const sTopics = subj.topics || [];
       const done = sTopics.filter(t => t.finished);
@@ -914,6 +956,32 @@ export function generateAiPerformanceReport({
       overdueReviewsCount: overdueReviews.length
     },
     subjectMatrix,
+    proficiencyMatrix: {
+      global: proficiency.global,
+      priorities: proficiency.priorities.slice(0, 25).map(n => ({
+        subjectId: n.subjectId,
+        subjectName: n.subjectName,
+        topicId: n.id,
+        number: n.number,
+        label: n.label,
+        level: n.stats.level,
+        hits: n.stats.hits,
+        misses: n.stats.misses,
+        total: n.stats.total,
+        pctDisplay: n.stats.pctDisplay
+      })),
+      strengths: proficiency.strengths.slice(0, 25).map(n => ({
+        subjectId: n.subjectId,
+        subjectName: n.subjectName,
+        topicId: n.id,
+        number: n.number,
+        label: n.label,
+        level: n.stats.level,
+        hits: n.stats.hits,
+        total: n.stats.total,
+        pctDisplay: n.stats.pctDisplay
+      }))
+    },
     studySessions: periodLogs,
     completedSimulados: periodCompletedSims.map(({ questionsSnapshot: _omit, ...rest }) => rest),
     activeSimulados: activeSimList,

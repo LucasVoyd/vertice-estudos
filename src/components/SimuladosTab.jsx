@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
+  Activity,
   Award,
   Check,
   CheckCircle2,
@@ -79,10 +80,14 @@ export default function SimuladosTab({
   onDeleteSimulado,
   onSaveStudySession,
   initialSimuladoId = null,
-  onClearInitialSimulado
+  onClearInitialSimulado,
+  feedFilterRequest = null,
+  onClearFeedFilterRequest,
+  onOpenProficiency
 }) {
   // Sub-abas principais: 'catalogo' | 'app_questoes' | 'historico'
   const [subTab, setSubTab] = useState('catalogo');
+  const lastHandledFeedReqRef = useRef(null);
 
   // Persistência em tempo real particionada por perfil
   const [activeAttemptsMap, setActiveAttemptsMap] = useState(() =>
@@ -164,6 +169,35 @@ export default function SimuladosTab({
     setCurrentSimuladoDef(null);
     setViewingReport(null);
   }, [activeProfile]);
+
+  // Aplica filtros direcionados vindos da Matriz de Proficiência ("Treinar tópico" / "Revisar erros")
+  useEffect(() => {
+    if (!feedFilterRequest || !feedFilterRequest.requestId) return;
+    if (lastHandledFeedReqRef.current === feedFilterRequest.requestId) return;
+    lastHandledFeedReqRef.current = feedFilterRequest.requestId;
+
+    setSubTab('app_questoes');
+    setSelectedSubjectIds(
+      Array.isArray(feedFilterRequest.subjectIds) ? feedFilterRequest.subjectIds : []
+    );
+    setSelectedTopicIds(
+      Array.isArray(feedFilterRequest.topicIds) ? feedFilterRequest.topicIds : []
+    );
+    setCustomStatus(feedFilterRequest.statusFilter || 'all');
+    setCustomSource('all');
+    setCustomLimit('all');
+    setSearchQuery('');
+    setTopicFilterQuery('');
+    setFeedPage(1);
+    setCurrentAttempt(null);
+    setCurrentSimuladoDef(null);
+    setViewingReport(null);
+
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    if (onClearFeedFilterRequest) onClearFeedFilterRequest();
+  }, [feedFilterRequest, onClearFeedFilterRequest]);
 
   // Persiste automaticamente o estado do Feed do App de Questões no localStorage
   useEffect(() => {
@@ -548,6 +582,7 @@ export default function SimuladosTab({
       );
 
       onSaveStudySession({
+        source: 'simulado_auto',
         date: report.date || getLocalDateIso(),
         subjectId: subjPerf.subjectId,
         subjectName: subjPerf.subjectName,
@@ -1981,7 +2016,7 @@ export default function SimuladosTab({
         </div>
 
         {/* Sub-Abas de Navegação */}
-        <div className="grid grid-cols-3 gap-2 pt-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
           {[
             { id: 'catalogo', label: 'Simulados (70q & Táticos)', icon: Award },
             { id: 'app_questoes', label: `App de Questões (${ALL_SIMULADO_QUESTIONS.length}q)`, icon: Layers },
@@ -2005,6 +2040,16 @@ export default function SimuladosTab({
               </button>
             );
           })}
+          {onOpenProficiency && (
+            <button
+              type="button"
+              onClick={onOpenProficiency}
+              className="py-2.5 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 border transition-all bg-cyan-500/15 text-cyan-200 border-cyan-400/40 hover:bg-cyan-500/25"
+            >
+              <Activity className="w-4 h-4 shrink-0" />
+              <span className="truncate">Níveis 1•2•3</span>
+            </button>
+          )}
         </div>
       </div>
 

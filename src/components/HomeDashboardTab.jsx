@@ -7,7 +7,7 @@
 // - Revisões do Dia
 // - Metas de Estudo Semanal (Horas + Questões + Alerta de Ritmo exato + Editar Metas)
 // - Gráfico Estudo Semanal (DOM..SAB)
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Plus,
   Calendar,
@@ -18,11 +18,18 @@ import {
   Award,
   Save,
   Layers,
-  Download
+  Download,
+  Activity
 } from 'lucide-react';
 import { computeWeeklyGoalAlert } from '../utils/editalParser';
 import { getLocalDateIso, getCurrentWeekDays, getLastNDays } from '../utils/dateUtils';
-import { loadActiveSimuladoAttempts, loadCompletedSimulados } from '../utils/simuladosStore';
+import {
+  loadActiveSimuladoAttempts,
+  loadCompletedSimulados,
+  loadQuestionHistory
+} from '../utils/simuladosStore';
+import { ALL_SIMULADO_QUESTIONS } from '../data/simulados/simuladosCmc2026';
+import { computePlanProficiency } from '../utils/proficiencyEngine';
 import ExportReportModal from './ExportReportModal';
 
 function formatHoursMins(mins) {
@@ -41,7 +48,8 @@ export default function HomeDashboardTab({
   onStartStudyFromCycle,
   onNavigateTab,
   onOpenSimulado,
-  onCompleteReview
+  onCompleteReview,
+  onOpenProficiency
 }) {
   const [showAllQueue, setShowAllQueue] = useState(false);
   const [editingGoals, setEditingGoals] = useState(false);
@@ -49,6 +57,19 @@ export default function HomeDashboardTab({
   const [goalQuestionsInput, setGoalQuestionsInput] = useState(plan?.weeklyGoalQuestions || 60);
   const [weeklyChartMode, setWeeklyChartMode] = useState('tempo'); // 'tempo' | 'questoes'
   const [exportModalOpen, setExportModalOpen] = useState(false);
+
+  const profileKey = state?.activeProfile || 'lucas';
+  const questionHistory = useMemo(() => loadQuestionHistory(profileKey), [profileKey]);
+  const proficiencyReport = useMemo(
+    () =>
+      computePlanProficiency({
+        plan,
+        activeProfile: profileKey,
+        questionHistory,
+        studyLogs: state?.studyLogs || []
+      }),
+    [plan, profileKey, questionHistory, state?.studyLogs]
+  );
 
   if (!plan) return null;
 
@@ -219,22 +240,51 @@ export default function HomeDashboardTab({
           </span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#2c3148] border border-slate-700/60 text-center">
-          <span className="text-xs font-bold text-white block">Desempenho</span>
+        <div
+          onClick={() => (onOpenProficiency ? onOpenProficiency() : onNavigateTab?.('proficiencia'))}
+          className="p-3.5 rounded-2xl bg-[#2c3148] border border-slate-700/60 hover:border-cyan-400/50 text-center cursor-pointer transition-colors"
+        >
+          <div className="flex items-center justify-center gap-1">
+            <span className="text-xs font-bold text-white">Desempenho</span>
+            {proficiencyReport.global.level > 0 && (
+              <span
+                className={`text-[9px] font-black px-1.5 py-0.2 rounded-full border ${proficiencyReport.global.badgeClass}`}
+              >
+                {proficiencyReport.global.shortBadge}
+              </span>
+            )}
+          </div>
           <span className="text-xs text-slate-300 mt-1 block">
-            Questões: {totalQuestions}
+            Questões:{' '}
+            {proficiencyReport.global.total > 0 ? proficiencyReport.global.total : totalQuestions}
           </span>
           <div className="w-full h-3.5 bg-[#1e2235] rounded-full overflow-hidden my-1.5 relative">
             <div
-              className="h-full bg-emerald-500"
-              style={{ width: `${perfPct}%` }}
+              className={`h-full ${
+                proficiencyReport.global.total > 0
+                  ? proficiencyReport.global.barClass
+                  : 'bg-emerald-500'
+              }`}
+              style={{
+                width: `${
+                  proficiencyReport.global.total > 0
+                    ? proficiencyReport.global.pctRounded
+                    : perfPct
+                }%`
+              }}
             />
             <span className="absolute inset-0 text-[9px] font-bold text-white flex items-center justify-center">
-              {perfPct}%
+              {proficiencyReport.global.total > 0
+                ? proficiencyReport.global.pctDisplay
+                : `${perfPct}%`}
             </span>
           </div>
           <span className="text-[11px] text-slate-400 block">
-            ✓ {totalHit} | ✗ {totalMiss}
+            ✓ {proficiencyReport.global.total > 0 ? proficiencyReport.global.hits : totalHit} | ✗{' '}
+            {proficiencyReport.global.total > 0 ? proficiencyReport.global.misses : totalMiss}
+          </span>
+          <span className="text-[11px] text-cyan-300 underline block mt-0.5">
+            Ver níveis 1•2•3 →
           </span>
         </div>
 
@@ -259,6 +309,43 @@ export default function HomeDashboardTab({
         </div>
       </div>
 
+      {/* Card Resumo Rápido de Proficiência (Níveis 1, 2 e 3 por Tópicos) */}
+      <button
+        type="button"
+        onClick={() => (onOpenProficiency ? onOpenProficiency() : onNavigateTab?.('proficiencia'))}
+        className="w-full p-3.5 rounded-2xl bg-[#242940] hover:bg-[#2a304a] border border-cyan-500/35 text-left transition flex flex-wrap items-center justify-between gap-2.5 shadow"
+      >
+        <div className="space-y-0.5 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-extrabold text-white flex items-center gap-1.5">
+              <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
+              Matriz de Proficiência por Tópicos (Níveis 1•2•3)
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-300">
+            {proficiencyReport.global.total > 0 ? (
+              <>
+                <strong className="text-orange-300">
+                  Nv.1 ({proficiencyReport.global.levelCounts.l1})
+                </strong>{' '}
+                •{' '}
+                <strong className="text-amber-200">
+                  Nv.2 ({proficiencyReport.global.levelCounts.l2})
+                </strong>{' '}
+                •{' '}
+                <strong className="text-emerald-300">
+                  Nv.3 ({proficiencyReport.global.levelCounts.l3})
+                </strong>{' '}
+                — Veja onde revisar e o que só manter
+              </>
+            ) : (
+              'Responda questões ou registre estudos para classificar cada tópico nos Níveis 1, 2 e 3'
+            )}
+          </p>
+        </div>
+        <span className="text-xs font-black text-cyan-300 shrink-0">Abrir Raio-X →</span>
+      </button>
+
       {/* Card Contagem Regressiva da Prova */}
       <div className="p-4 rounded-2xl bg-[#2c3148] border border-slate-700/60 flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -281,7 +368,6 @@ export default function HomeDashboardTab({
 
       {/* Card Central de Simulados & App de Questões Selecon (Com Retomada Instantânea Anti-Perda) */}
       {(() => {
-        const profileKey = state?.activeProfile || 'lucas';
         const activeMap = loadActiveSimuladoAttempts(profileKey);
         const activeAttempts = Object.values(activeMap || {});
         const completedSims = loadCompletedSimulados(profileKey);
@@ -298,7 +384,7 @@ export default function HomeDashboardTab({
                     Novo • Auto-Save Instantâneo
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-extrabold uppercase">
-                    216 Questões Selecon CMC 2026
+                    {ALL_SIMULADO_QUESTIONS.length} Questões Selecon CMC 2026
                   </span>
                 </div>
                 <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2 pt-0.5">
@@ -306,7 +392,7 @@ export default function HomeDashboardTab({
                   Simulados Oficiais (70q) & App de Questões
                 </h3>
                 <p className="text-xs text-slate-300">
-                  3 Simulados Oficiais Completos (70 questões • 100 pts + Discursiva) + 4 Baterias Táticas e Gerador de Cadernos. Suas respostas ficam salvas a cada clique.
+                  4 Simulados Oficiais Completos (70 questões • 100 pts + Discursiva) + 6 Baterias Táticas/Exclusivas e Gerador de Cadernos. Suas respostas ficam salvas a cada clique.
                 </p>
               </div>
             </div>

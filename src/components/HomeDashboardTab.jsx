@@ -319,7 +319,7 @@ export default function HomeDashboardTab({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-extrabold text-white flex items-center gap-1.5">
               <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
-              Matriz de Proficiência por Tópicos (Níveis 1•2•3)
+              Planilha de Proficiência por Tópicos (Níveis 1•2•3)
             </span>
           </div>
           <p className="text-[11px] text-slate-300">
@@ -339,11 +339,11 @@ export default function HomeDashboardTab({
                 — Veja onde revisar e o que só manter
               </>
             ) : (
-              'Responda questões ou registre estudos para classificar cada tópico nos Níveis 1, 2 e 3'
+              'Responda questões ou registre estudos para ver sua tabela de Nível 1, 2 e 3'
             )}
           </p>
         </div>
-        <span className="text-xs font-black text-cyan-300 shrink-0">Abrir Raio-X →</span>
+        <span className="text-xs font-black text-cyan-300 shrink-0">Ver planilha →</span>
       </button>
 
       {/* Card Contagem Regressiva da Prova */}

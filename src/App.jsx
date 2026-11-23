@@ -59,7 +59,21 @@ export default function App() {
   const [initialSimuladoId, setInitialSimuladoId] = useState(null);
   const [feedFilterRequest, setFeedFilterRequest] = useState(null);
   const [proficiencyExportOpen, setProficiencyExportOpen] = useState(false);
+  const [proficiencyReturnTab, setProficiencyReturnTab] = useState('inicio');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
+  const openProficiencyFrom = originTab => {
+    setProficiencyReturnTab(originTab);
+    setActiveTab('proficiencia');
+  };
+
+  const navigateFromTab = (originTab, targetTab) => {
+    if (targetTab === 'proficiencia') {
+      openProficiencyFrom(originTab);
+    } else {
+      setActiveTab(targetTab);
+    }
+  };
   const [addingProfile, setAddingProfile] = useState(false);
   const [newProfileName, setNewProfileName] = useState('');
   const profileMenuRef = useRef(null);
@@ -832,8 +846,8 @@ export default function App() {
               });
               setActiveTab('estudo');
             }}
-            onNavigateTab={tab => setActiveTab(tab)}
-            onOpenProficiency={() => setActiveTab('proficiencia')}
+            onNavigateTab={tab => navigateFromTab('inicio', tab)}
+            onOpenProficiency={() => openProficiencyFrom('inicio')}
             onOpenSimulado={simId => {
               setInitialSimuladoId(simId);
               setActiveTab('simulados');
@@ -877,7 +891,7 @@ export default function App() {
               setPreselectedStudy({ subjectId, topicId, openForm: true });
               setActiveTab('estudo');
             }}
-            onOpenProficiency={() => setActiveTab('proficiencia')}
+            onOpenProficiency={() => openProficiencyFrom('edital')}
           />
         )}
 
@@ -886,6 +900,7 @@ export default function App() {
             state={state}
             plan={currentPlan}
             activeProfile={state.activeProfile || 'lucas'}
+            onBack={() => setActiveTab(proficiencyReturnTab || 'inicio')}
             onNavigateTab={tab => setActiveTab(tab)}
             onOpenExportModal={() => setProficiencyExportOpen(true)}
             onOpenStudyForTopic={(subjectId, topicId) => {
@@ -913,7 +928,7 @@ export default function App() {
             onClearInitialSimulado={() => setInitialSimuladoId(null)}
             feedFilterRequest={feedFilterRequest}
             onClearFeedFilterRequest={() => setFeedFilterRequest(null)}
-            onOpenProficiency={() => setActiveTab('proficiencia')}
+            onOpenProficiency={() => openProficiencyFrom('simulados')}
             onAddSimulado={sim =>
               setState(prev => ({
                 ...prev,
@@ -986,7 +1001,7 @@ export default function App() {
           <MoreHubTab
             state={state}
             plan={currentPlan}
-            onNavigateTab={tab => setActiveTab(tab)}
+            onNavigateTab={tab => navigateFromTab('mais', tab)}
             onSelectPlan={id => {
               setState(prev => ({ ...prev, selectedPlanId: id }));
               setActiveTab('inicio');

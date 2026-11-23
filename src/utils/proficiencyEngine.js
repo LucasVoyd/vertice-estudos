@@ -104,16 +104,16 @@ export function classifyProficiency(rawHits = 0, rawMisses = 0, minReliable = MI
   let recommendation = '';
   if (level === 1) {
     recommendation = isLowSample
-      ? `Abaixo de 50% (amostra inicial de ${total}q). Resolva mais questões ou releia a base; ${pointsTo50} acerto(s) seguidos levam ao Nível 2.`
-      : `Crítico (${pctDisplay}): revise a teoria/lei seca e refaça os erros. Faltam ${pointsTo50} acerto(s) seguidos para sair da zona crítica.`;
+      ? `Precisa revisar — reforce a base e refaça as erradas (${total}q até agora)`
+      : `Precisa revisar — reforce a teoria e refaça os ${misses} erro(s)`;
   } else if (level === 2) {
     recommendation = isLowSample
-      ? `Faixa intermediária em amostra pequena (${total}q). Faça pelo menos ${minReliable} questões; mais ${pointsTo80} acerto(s) seguidos levam ao Nível 3.`
-      : `Em evolução (${pctDisplay}): estude as justificativas das ${misses} errada(s). Mais ${pointsTo80} acerto(s) seguidos levam ao Nível 3 (80%+).`;
+      ? `Em evolução — faça mais questões para confirmar (+${pointsTo80} p/ 80%)`
+      : `Em evolução — revise as ${misses} errada(s) (+${pointsTo80} certas p/ Nível 3)`;
   } else {
     recommendation = isLowSample
-      ? `Bom começo (${pctDisplay} em ${total}q), mas resolva pelo menos ${minReliable} questões no tópico para confirmar Nível 3 estável.`
-      : `Bom desempenho (${pctDisplay}): conteúdo consolidado. Apenas mantenha com revisões espaçadas e baterias curtas.`;
+      ? `Bom início (${pctDisplay} em ${total}q) — faça pelo menos ${minReliable}q para confirmar`
+      : `Já está bom — só manter com revisões espaçadas`;
   }
 
   return {

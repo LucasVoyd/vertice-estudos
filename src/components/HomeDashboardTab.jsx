@@ -19,7 +19,8 @@ import {
   Save,
   Layers,
   Download,
-  Activity
+  Activity,
+  Trash2
 } from 'lucide-react';
 import { computeWeeklyGoalAlert } from '../utils/editalParser';
 import { getLocalDateIso, getCurrentWeekDays, getLastNDays } from '../utils/dateUtils';
@@ -49,6 +50,7 @@ export default function HomeDashboardTab({
   onNavigateTab,
   onOpenSimulado,
   onCompleteReview,
+  onClearPendingReviews,
   onOpenProficiency
 }) {
   const [showAllQueue, setShowAllQueue] = useState(false);
@@ -319,27 +321,34 @@ export default function HomeDashboardTab({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-extrabold text-white flex items-center gap-1.5">
               <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
-              Planilha de Proficiência por Tópicos (Níveis 1•2•3)
+              Planilha de Proficiência por Tópicos (Níveis 1 a 5)
             </span>
           </div>
           <p className="text-[11px] text-slate-300">
             {proficiencyReport.global.total > 0 ? (
               <>
+                <strong className="text-rose-300">
+                  Nv.1 ({proficiencyReport.global.levelCounts5?.l1 || 0})
+                </strong>{' '}
+                •{' '}
                 <strong className="text-orange-300">
-                  Nv.1 ({proficiencyReport.global.levelCounts.l1})
+                  Nv.2 ({proficiencyReport.global.levelCounts5?.l2 || 0})
                 </strong>{' '}
                 •{' '}
                 <strong className="text-amber-200">
-                  Nv.2 ({proficiencyReport.global.levelCounts.l2})
+                  Nv.3 ({proficiencyReport.global.levelCounts5?.l3 || 0})
                 </strong>{' '}
                 •{' '}
                 <strong className="text-emerald-300">
-                  Nv.3 ({proficiencyReport.global.levelCounts.l3})
+                  Nv.4 ({proficiencyReport.global.levelCounts5?.l4 || 0})
                 </strong>{' '}
-                — Veja onde revisar e o que só manter
+                •{' '}
+                <strong className="text-cyan-300">
+                  Nv.5 ({proficiencyReport.global.levelCounts5?.l5 || 0})
+                </strong>
               </>
             ) : (
-              'Responda questões ou registre estudos para ver sua tabela de Nível 1, 2 e 3'
+              'Responda questões ou registre estudos para ver sua tabela de proficiência'
             )}
           </p>
         </div>
@@ -539,7 +548,19 @@ export default function HomeDashboardTab({
 
       {/* Card Revisões do Dia */}
       <div className="p-4 sm:p-5 rounded-2xl bg-[#2c3148] border border-slate-700/60 space-y-3">
-        <h3 className="text-base font-extrabold text-white text-center">Revisões do dia</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-base font-extrabold text-white">Revisões do dia</h3>
+          {dueReviews.length > 0 && onClearPendingReviews && (
+            <button
+              type="button"
+              onClick={onClearPendingReviews}
+              className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-1"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Excluir pendentes
+            </button>
+          )}
+        </div>
         {dueReviews.length === 0 ? (
           <p className="text-sm text-slate-300 text-center py-3">
             Você não tem revisões agendadas para hoje.

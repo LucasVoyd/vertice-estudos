@@ -8,6 +8,7 @@ import { exportAllSimuladosStorage, importAllSimuladosStorage } from './simulado
 const STORAGE_KEY = 'vertice_estudos_state_v1';
 const SUPABASE_CFG_KEY = 'vertice_supabase_cfg_v1';
 export const CURRENT_SCHEMA_VERSION = 4;
+export const PENDING_REVIEWS_PURGE_TOKEN = 'purge_2026_11_23_v1';
 
 export const SUBJECT_COLORS = [
   '#10b981', // Emerald
@@ -239,6 +240,7 @@ export function createInitialAppState() {
     plans: [cmcPlan, creaPlan],
     studyLogs: [], // Registros de sessões de estudo (cronômetro ou manual)
     reviews: [],   // Revisões agendadas (1, 7, 15, 30 dias)
+    pendingReviewsPurgeToken: PENDING_REVIEWS_PURGE_TOKEN,
     simulados: [], // Registro de simulados com pesos por disciplina
     reminders: [
       {
@@ -320,6 +322,15 @@ export function loadAppState() {
       changed = true;
     }
 
+    // Limpeza única de todas as revisões pendentes/agendadas/atrasadas solicitada pelo usuário
+    let sanitizedReviews = Array.isArray(parsed.reviews) ? parsed.reviews : [];
+    let nextPurgeToken = parsed.pendingReviewsPurgeToken;
+    if (nextPurgeToken !== PENDING_REVIEWS_PURGE_TOKEN) {
+      sanitizedReviews = sanitizedReviews.filter(r => Boolean(r && r.done));
+      nextPurgeToken = PENDING_REVIEWS_PURGE_TOKEN;
+      changed = true;
+    }
+
     // Migração automática para o Edital Nº 001/2026-CMC Oficial Retificado (v4)
     if (parsed.version !== CURRENT_SCHEMA_VERSION) {
       const freshCmcPlan = buildCmc2026SeedPlan();
@@ -335,6 +346,8 @@ export function loadAppState() {
         profiles: mergedProfiles,
         plans: migratedPlans,
         studyLogs: sanitizedLogs,
+        reviews: sanitizedReviews,
+        pendingReviewsPurgeToken: nextPurgeToken,
         reminders: [
           {
             id: 'rem_1',
@@ -359,7 +372,9 @@ export function loadAppState() {
         ...parsed,
         activeProfile: safeActiveProfile,
         profiles: mergedProfiles,
-        studyLogs: sanitizedLogs
+        studyLogs: sanitizedLogs,
+        reviews: sanitizedReviews,
+        pendingReviewsPurgeToken: nextPurgeToken
       };
       saveAppState(updatedState);
       return updatedState;
@@ -463,7 +478,15 @@ export async function syncWithSupabase(localState, direction = 'push') {
       if (data.payload.simuladosStorage) {
         importAllSimuladosStorage(data.payload.simuladosStorage);
       }
-      return { ok: true, state: data.payload, updatedAt: data.updated_at };
+      const cloudState = {
+        ...data.payload,
+        reviews:
+          data.payload.pendingReviewsPurgeToken === PENDING_REVIEWS_PURGE_TOKEN
+            ? data.payload.reviews || []
+            : (data.payload.reviews || []).filter(r => Boolean(r && r.done)),
+        pendingReviewsPurgeToken: PENDING_REVIEWS_PURGE_TOKEN
+      };
+      return { ok: true, state: cloudState, updatedAt: data.updated_at };
     } else {
       const payloadWithSimulados = {
         ...localState,

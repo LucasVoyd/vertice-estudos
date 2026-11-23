@@ -47,6 +47,7 @@ export default function MoreHubTab({
   onDeletePlan,
   onCompleteReview,
   onIgnoreReview,
+  onClearPendingReviews,
   onAddSimulado,
   onUpdateStudyLog,
   onDeleteStudyLog,
@@ -309,7 +310,20 @@ export default function MoreHubTab({
       {/* SEÇÃO: REVISÕES ESPAÇADAS */}
       {section === 'revisoes' && (
         <div className="space-y-4">
-          <h2 className="text-xl font-extrabold text-emerald-400">Revisões Espaçadas</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xl font-extrabold text-emerald-400">Revisões Espaçadas</h2>
+            {delayedReviews.length + scheduledReviews.length + ignoredReviews.length > 0 &&
+              onClearPendingReviews && (
+                <button
+                  type="button"
+                  onClick={onClearPendingReviews}
+                  className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir todas as pendentes
+                </button>
+              )}
+          </div>
           <div className="flex gap-2">
             {[
               { id: 'programadas', label: `Programadas (${scheduledReviews.length})` },

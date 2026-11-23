@@ -17,7 +17,12 @@ import {
   UserPlus,
   Trash2
 } from 'lucide-react';
-import { loadAppState, saveAppState, DEFAULT_PROFILES } from './utils/appStore';
+import {
+  loadAppState,
+  saveAppState,
+  DEFAULT_PROFILES,
+  PENDING_REVIEWS_PURGE_TOKEN
+} from './utils/appStore';
 import { linesToTopicsTree, generateStudyCycle, calculateSubjectWeight } from './utils/editalParser';
 import { getLocalDateIso } from './utils/dateUtils';
 import {
@@ -860,6 +865,13 @@ export default function App() {
                 )
               }))
             }
+            onClearPendingReviews={() =>
+              setState(prev => ({
+                ...prev,
+                reviews: (prev.reviews || []).filter(r => Boolean(r && r.done)),
+                pendingReviewsPurgeToken: PENDING_REVIEWS_PURGE_TOKEN
+              }))
+            }
           />
         )}
 
@@ -1031,6 +1043,13 @@ export default function App() {
                 reviews: (prev.reviews || []).map(r =>
                   r.id === revId ? { ...r, ignored: true } : r
                 )
+              }))
+            }
+            onClearPendingReviews={() =>
+              setState(prev => ({
+                ...prev,
+                reviews: (prev.reviews || []).filter(r => Boolean(r && r.done)),
+                pendingReviewsPurgeToken: PENDING_REVIEWS_PURGE_TOKEN
               }))
             }
             onAddSimulado={sim =>

@@ -59,7 +59,7 @@ export default function StudyRegisterTab({
   );
   const [cycleItemId, setCycleItemId] = useState(timerState?.cycleItemId || '');
   const [addToPlanning, setAddToPlanning] = useState(true);
-  const [scheduleReviews, setScheduleReviews] = useState(true);
+  const [scheduleReviews, setScheduleReviews] = useState(false);
   const [markTopicsFinished, setMarkTopicsFinished] = useState(false);
   const [material, setMaterial] = useState('');
   const [timeStr, setTimeStr] = useState('00:30:00');

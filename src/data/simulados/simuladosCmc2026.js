@@ -13,6 +13,7 @@ import { QUESTS_ESPECIFICOS_SIM_03 } from './blocoEspecificosSim3.js';
 import { QUESTS_ESPECIFICOS_EXTRAS_01 } from './blocoEspecificosExtras1.js';
 import { QUESTS_ESPECIFICOS_EXTRAS_02 } from './blocoEspecificosExtras2.js';
 import { QUESTS_BASICOS_SIM_04, QUESTS_GERAIS_SIM_04 } from './blocoBasicosGeraisExtras.js';
+import { QUESTS_PROVA_CMC_2021, PROVA_DISCURSIVA_CMC_2021 } from './provaCmc2021.js';
 import { buildOfficialTecnicoLegislativoSubjects } from '../editalCmc2026Oficial.js';
 
 export const OFFICIAL_CMC_SUBJECTS = buildOfficialTecnicoLegislativoSubjects();
@@ -257,6 +258,7 @@ const NORM_GERAIS_4 = QUESTS_GERAIS_SIM_04.map(normalizeQuestion);
 const NORM_ESP_EXTRAS_1 = QUESTS_ESPECIFICOS_EXTRAS_01.map(normalizeQuestion);
 const NORM_ESP_EXTRAS_2 = QUESTS_ESPECIFICOS_EXTRAS_02.map(normalizeQuestion);
 const NORM_EXTRAS = QUESTS_EXTRAS_SELECON.map(normalizeQuestion);
+const NORM_PROVA_2021 = QUESTS_PROVA_CMC_2021.map(normalizeQuestion);
 
 function pickEvenlySpacedIndices(total, count) {
   const picked = new Set();
@@ -306,8 +308,9 @@ export const QUESTIONS_SIMULADO_04 = [
   ...NORM_ESP_4
 ];
 
-// Banco Completo Unificado (372 questões únicas sem nenhuma repetição)
+// Banco Completo Unificado (442 questões únicas: 372 inéditas/reais + 70 da Prova Oficial CMC 2021)
 export const ALL_SIMULADO_QUESTIONS = [
+  ...NORM_PROVA_2021,
   ...QUESTIONS_SIMULADO_01,
   ...QUESTIONS_SIMULADO_02,
   ...QUESTIONS_SIMULADO_03,
@@ -422,7 +425,8 @@ const QUESTIONS_LEGISLACAO_CUIABA = [
   ...NORM_ESP_2.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
   ...NORM_ESP_3.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
   ...NORM_ESP_EXTRAS_2.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
-  ...NORM_EXTRAS.filter((q) => q.subjectId === 'sub_cmc_leg' || questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7'))
+  ...NORM_EXTRAS.filter((q) => q.subjectId === 'sub_cmc_leg' || questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
+  ...NORM_PROVA_2021.filter((q) => q.subjectId === 'sub_cmc_leg' || questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7'))
 ];
 const LEGISLACAO_CUIABA_PTS = Number(
   QUESTIONS_LEGISLACAO_CUIABA.reduce((acc, q) => acc + (Number(q.points) || 1), 0).toFixed(2)
@@ -440,6 +444,21 @@ const ESP_EXCLUSIVO_B_PTS = Number((QUESTIONS_ESP_EXCLUSIVO_B.length * 1.75).toF
 // CATÁLOGO OFICIAL DE SIMULADOS E CADERNOS TÁTICOS CMC 2026
 // ============================================================================
 export const SIMULADOS_CATALOG = [
+  {
+    id: 'sim_prova_2021_cmc',
+    code: 'PROVA OFICIAL CMC 2021',
+    title: 'Última Prova Oficial — Câmara de Cuiabá 2021 (Técnico Legislativo • Selecon)',
+    subtitle: 'Edital Nº 001-CMC/2020 (29/08/2021) • 70 questões completas + Gabarito Definitivo + Discursiva',
+    category: 'oficial_70',
+    badge: 'Prova Real Completa 2021 • 70q',
+    badgeColor: 'emerald',
+    durationMinutes: 270, // 4h30min oficiais da prova
+    totalPoints: 100,
+    minPassPoints: 50,
+    discursiva: PROVA_DISCURSIVA_CMC_2021,
+    description: 'Caderno integral oficial aplicado em 29/08/2021 pelo Instituto Selecon (com as 4 figuras originais da prova — ícones Win10, planilha Excel, manchete e mapa da Ferrogrão), corrigido pelo Gabarito Oficial Definitivo (incluindo a mudança pós-recurso na Questão 44 de C para B) + Prova Discursiva original.',
+    questions: NORM_PROVA_2021
+  },
   {
     id: 'sim_oficial_01',
     code: 'SIMULADO OFICIAL #01',

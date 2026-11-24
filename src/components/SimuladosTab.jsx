@@ -1254,6 +1254,16 @@ export default function SimuladosTab({
                 {currentQ.enunciado}
               </div>
 
+              {currentQ.imageUrl && (
+                <div className="p-2.5 rounded-xl bg-white border border-slate-600/80 inline-block max-w-full shadow">
+                  <img
+                    src={currentQ.imageUrl}
+                    alt={currentQ.imageAlt || 'Figura oficial da questão'}
+                    className="max-w-full max-h-80 h-auto rounded object-contain"
+                  />
+                </div>
+              )}
+
               {/* Lista de 4 Alternativas (A, B, C, D) com Tesourinha de Eliminação */}
               <div className="space-y-2.5 pt-1">
                 {(currentQ.options || []).map((optText, idx) => {
@@ -1922,6 +1932,15 @@ export default function SimuladosTab({
                     <p className="text-xs sm:text-sm text-slate-200 whitespace-pre-line">
                       {q.enunciado}
                     </p>
+                    {q.imageUrl && (
+                      <div className="p-2 rounded-xl bg-white border border-slate-700 inline-block max-w-full">
+                        <img
+                          src={q.imageUrl}
+                          alt={q.imageAlt || 'Figura oficial da questão'}
+                          className="max-w-full max-h-64 h-auto rounded object-contain"
+                        />
+                      </div>
+                    )}
                     <div className="space-y-1 text-xs">
                       {(q.options || []).map((opt, oIdx) => {
                         const isAns = Number(q.answer) === oIdx;
@@ -1987,7 +2006,9 @@ export default function SimuladosTab({
           <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
             <p className="text-[10px] font-bold uppercase text-slate-400">Acervo Selecon CMC</p>
             <p className="text-lg font-black text-white">{bankStats.totalBank} questões</p>
-            <p className="text-[11px] text-cyan-300">3 Simulados 70q + Extras</p>
+            <p className="text-[11px] text-cyan-300">
+              {SIMULADOS_CATALOG.filter((s) => s.category === 'oficial_70').length} Provas 70q + Táticos
+            </p>
           </div>
           <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
             <p className="text-[10px] font-bold uppercase text-slate-400">Questões Resolvidas</p>
@@ -2047,7 +2068,7 @@ export default function SimuladosTab({
               className="py-2.5 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 border transition-all bg-cyan-500/15 text-cyan-200 border-cyan-400/40 hover:bg-cyan-500/25"
             >
               <Activity className="w-4 h-4 shrink-0" />
-              <span className="truncate">Níveis 1•2•3</span>
+              <span className="truncate">Proficiência (1–5)</span>
             </button>
           )}
         </div>
@@ -2741,6 +2762,16 @@ export default function SimuladosTab({
                   <p className="text-xs sm:text-sm text-slate-100 leading-relaxed whitespace-pre-line">
                     {q.enunciado}
                   </p>
+
+                  {q.imageUrl && (
+                    <div className="p-2 rounded-xl bg-white border border-slate-700 inline-block max-w-full">
+                      <img
+                        src={q.imageUrl}
+                        alt={q.imageAlt || 'Figura oficial da questão'}
+                        className="max-w-full max-h-72 h-auto rounded object-contain"
+                      />
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     {(q.options || []).map((optText, oIdx) => {

@@ -14,6 +14,16 @@ import { QUESTS_ESPECIFICOS_EXTRAS_01 } from './blocoEspecificosExtras1.js';
 import { QUESTS_ESPECIFICOS_EXTRAS_02 } from './blocoEspecificosExtras2.js';
 import { QUESTS_BASICOS_SIM_04, QUESTS_GERAIS_SIM_04 } from './blocoBasicosGeraisExtras.js';
 import { QUESTS_PROVA_CMC_2021, PROVA_DISCURSIVA_CMC_2021 } from './provaCmc2021.js';
+import {
+  QUESTS_PROVA_CMC_2021_ANALISTA,
+  PROVA_DISCURSIVA_CMC_2021_ANALISTA
+} from './provaCmc2021Analista.js';
+import { QUESTS_REAIS_SELECON_CAMARAS } from './reaisSeleconCamaras.js';
+import { QUESTS_TOP10_BASICOS_GERAIS } from './bancoTop10BasicosGerais.js';
+import { QUESTS_TOP10_LEGISLACAO_CUIABA } from './bancoTop10LegislacaoCuiaba.js';
+import { QUESTS_TOP10_ESP_A } from './bancoTop10EspecificosA.js';
+import { QUESTS_TOP10_ESP_B } from './bancoTop10EspecificosB.js';
+import { QUESTS_TOP10_ESP_C } from './bancoTop10EspecificosC.js';
 import { buildOfficialTecnicoLegislativoSubjects } from '../editalCmc2026Oficial.js';
 
 export const OFFICIAL_CMC_SUBJECTS = buildOfficialTecnicoLegislativoSubjects();
@@ -259,6 +269,13 @@ const NORM_ESP_EXTRAS_1 = QUESTS_ESPECIFICOS_EXTRAS_01.map(normalizeQuestion);
 const NORM_ESP_EXTRAS_2 = QUESTS_ESPECIFICOS_EXTRAS_02.map(normalizeQuestion);
 const NORM_EXTRAS = QUESTS_EXTRAS_SELECON.map(normalizeQuestion);
 const NORM_PROVA_2021 = QUESTS_PROVA_CMC_2021.map(normalizeQuestion);
+const NORM_PROVA_2021_ANALISTA = QUESTS_PROVA_CMC_2021_ANALISTA.map(normalizeQuestion);
+const NORM_REAIS_CAMARAS = QUESTS_REAIS_SELECON_CAMARAS.map(normalizeQuestion);
+const NORM_TOP10_BG = QUESTS_TOP10_BASICOS_GERAIS.map(normalizeQuestion);
+const NORM_TOP10_LEG = QUESTS_TOP10_LEGISLACAO_CUIABA.map(normalizeQuestion);
+const NORM_TOP10_ESP_A = QUESTS_TOP10_ESP_A.map(normalizeQuestion);
+const NORM_TOP10_ESP_B = QUESTS_TOP10_ESP_B.map(normalizeQuestion);
+const NORM_TOP10_ESP_C = QUESTS_TOP10_ESP_C.map(normalizeQuestion);
 
 function pickEvenlySpacedIndices(total, count) {
   const picked = new Set();
@@ -308,7 +325,7 @@ export const QUESTIONS_SIMULADO_04 = [
   ...NORM_ESP_4
 ];
 
-// Banco Completo Unificado (442 questões únicas: 372 inéditas/reais + 70 da Prova Oficial CMC 2021)
+// Banco Completo Unificado (1.076 questões únicas: 305 reais Selecon + 771 inéditas padrão CMC 2026)
 export const ALL_SIMULADO_QUESTIONS = [
   ...NORM_PROVA_2021,
   ...QUESTIONS_SIMULADO_01,
@@ -317,7 +334,14 @@ export const ALL_SIMULADO_QUESTIONS = [
   ...QUESTIONS_SIMULADO_04,
   ...QUESTIONS_ESP_EXCLUSIVO_A,
   ...QUESTIONS_ESP_EXCLUSIVO_B,
-  ...NORM_EXTRAS
+  ...NORM_EXTRAS,
+  ...NORM_PROVA_2021_ANALISTA,
+  ...NORM_REAIS_CAMARAS,
+  ...NORM_TOP10_BG,
+  ...NORM_TOP10_LEG,
+  ...NORM_TOP10_ESP_A,
+  ...NORM_TOP10_ESP_B,
+  ...NORM_TOP10_ESP_C
 ];
 
 // ============================================================================
@@ -418,16 +442,12 @@ Parágrafo 4 (Conclusão - linhas 24 a 30): Concluir reforçando que a conformid
   }
 };
 
-const QUESTIONS_LEGISLACAO_CUIABA = [
-  ...NORM_BASICOS.filter((q) => q.subjectId === 'sub_cmc_leg'),
-  ...NORM_BASICOS_4.filter((q) => q.subjectId === 'sub_cmc_leg'),
-  ...NORM_ESP_1.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
-  ...NORM_ESP_2.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
-  ...NORM_ESP_3.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
-  ...NORM_ESP_EXTRAS_2.filter((q) => questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
-  ...NORM_EXTRAS.filter((q) => q.subjectId === 'sub_cmc_leg' || questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7')),
-  ...NORM_PROVA_2021.filter((q) => q.subjectId === 'sub_cmc_leg' || questionMatchesTopicFilter(q, 'cmc_esp_6') || questionMatchesTopicFilter(q, 'cmc_esp_7'))
-];
+const QUESTIONS_LEGISLACAO_CUIABA = ALL_SIMULADO_QUESTIONS.filter(
+  (q) =>
+    q.subjectId === 'sub_cmc_leg' ||
+    questionMatchesTopicFilter(q, 'cmc_esp_6') ||
+    questionMatchesTopicFilter(q, 'cmc_esp_7')
+);
 const LEGISLACAO_CUIABA_PTS = Number(
   QUESTIONS_LEGISLACAO_CUIABA.reduce((acc, q) => acc + (Number(q.points) || 1), 0).toFixed(2)
 );
@@ -436,6 +456,50 @@ const QUESTIONS_REAIS_SELECON = ALL_SIMULADO_QUESTIONS.filter((q) => q.isRealSel
 const REAIS_SELECON_PTS = Number(
   QUESTIONS_REAIS_SELECON.reduce((acc, q) => acc + (Number(q.points) || 1), 0).toFixed(2)
 );
+
+const PROVA_2021_ANALISTA_PTS = Number(
+  NORM_PROVA_2021_ANALISTA.reduce((acc, q) => acc + (Number(q.points) || 1), 0).toFixed(2)
+);
+
+const TOP10_PT = NORM_TOP10_BG.filter((q) => q.subjectId === 'sub_cmc_pt');
+const TOP10_RLM = NORM_TOP10_BG.filter((q) => q.subjectId === 'sub_cmc_rlm');
+const TOP10_INFO = NORM_TOP10_BG.filter((q) => q.subjectId === 'sub_cmc_info');
+const TOP10_HGMT = NORM_TOP10_BG.filter((q) => q.subjectId === 'sub_cmc_hgmt');
+const TOP10_ETICA = NORM_TOP10_BG.filter((q) => q.subjectId === 'sub_cmc_etica');
+const TOP10_REL = NORM_TOP10_BG.filter((q) => q.subjectId === 'sub_cmc_rel');
+
+const QUESTIONS_SIMULADO_05 = [
+  ...TOP10_PT.slice(0, 5),
+  ...TOP10_RLM.slice(0, 4),
+  ...TOP10_INFO.slice(0, 3),
+  ...NORM_TOP10_LEG.slice(0, 3),
+  ...TOP10_HGMT.slice(0, 6),
+  ...TOP10_ETICA.slice(0, 5),
+  ...TOP10_REL.slice(0, 4),
+  ...NORM_TOP10_ESP_A.slice(0, 14),
+  ...NORM_TOP10_ESP_B.slice(0, 13),
+  ...NORM_TOP10_ESP_C.slice(0, 13)
+];
+
+const QUESTIONS_SIMULADO_06 = [
+  ...TOP10_PT.slice(5, 10),
+  ...TOP10_RLM.slice(4, 8),
+  ...TOP10_INFO.slice(3, 6),
+  ...NORM_TOP10_LEG.slice(3, 6),
+  ...TOP10_HGMT.slice(6, 12),
+  ...TOP10_ETICA.slice(5, 10),
+  ...TOP10_REL.slice(4, 8),
+  ...NORM_TOP10_ESP_A.slice(14, 28),
+  ...NORM_TOP10_ESP_B.slice(13, 26),
+  ...NORM_TOP10_ESP_C.slice(13, 26)
+];
+
+const QUESTIONS_TOP10_ESP_HARD = [
+  ...NORM_TOP10_ESP_A.slice(28, 48),
+  ...NORM_TOP10_ESP_B.slice(26, 46),
+  ...NORM_TOP10_ESP_C.slice(26, 46)
+];
+const TOP10_ESP_HARD_PTS = Number((QUESTIONS_TOP10_ESP_HARD.length * 1.75).toFixed(2));
 
 const ESP_EXCLUSIVO_A_PTS = Number((QUESTIONS_ESP_EXCLUSIVO_A.length * 1.75).toFixed(2));
 const ESP_EXCLUSIVO_B_PTS = Number((QUESTIONS_ESP_EXCLUSIVO_B.length * 1.75).toFixed(2));
@@ -617,6 +681,66 @@ export const SIMULADOS_CATALOG = [
     discursiva: null,
     description: 'Seleção de questões reais aplicadas pelo Instituto Selecon em provas de Cuiabá/MT e órgãos públicos, revisadas e comentadas alternativa por alternativa para você sentir a assinatura exata da banca.',
     questions: QUESTIONS_REAIS_SELECON
+  },
+  {
+    id: 'sim_prova_2021_analista',
+    code: 'PROVA OFICIAL ANALISTA 2021',
+    title: 'Prova Oficial CMC 2021 — Analista Legislativo (Instituto Selecon)',
+    subtitle: `Edital Nº 001-CMC/2020 • ${NORM_PROVA_2021_ANALISTA.length} questões vigentes + Discursiva oficial`,
+    category: 'oficial_70',
+    badge: `Prova Real Analista 2021 • ${NORM_PROVA_2021_ANALISTA.length}q`,
+    badgeColor: 'emerald',
+    durationMinutes: 270,
+    totalPoints: PROVA_2021_ANALISTA_PTS,
+    minPassPoints: Number((PROVA_2021_ANALISTA_PTS * 0.5).toFixed(2)),
+    discursiva: PROVA_DISCURSIVA_CMC_2021_ANALISTA,
+    description: 'Caderno oficial aplicado pela banca Instituto Selecon na Câmara Municipal de Cuiabá (Analista Legislativo 2021), com gabarito definitivo aplicado e exclusão apenas de 2 itens revogados da Lei nº 8.666/1993.',
+    questions: NORM_PROVA_2021_ANALISTA
+  },
+  {
+    id: 'sim_oficial_05',
+    code: 'SIMULADO OFICIAL #05',
+    title: 'Simulado Inédito Nível Top 10 — Padrão Selecon CMC #05 (70q)',
+    subtitle: 'Bateria calibrada para nota de corte Top 10 (15 Básicos + 15 Gerais + 40 Específicos)',
+    category: 'oficial_70',
+    badge: 'Inédito Top 10 • 70q / 100 pts',
+    badgeColor: 'purple',
+    durationMinutes: 240,
+    totalPoints: 100,
+    minPassPoints: 50,
+    discursiva: null,
+    description: 'Simulado completo de alta exigência com questões inéditas nível Top 10 cobrindo todos os blocos do Anexo V para Técnico Legislativo CMC 2026.',
+    questions: QUESTIONS_SIMULADO_05
+  },
+  {
+    id: 'sim_oficial_06',
+    code: 'SIMULADO OFICIAL #06',
+    title: 'Simulado Inédito Nível Top 10 — Padrão Selecon CMC #06 (70q)',
+    subtitle: 'Segundo simulado completo 100% disjunto (15 Básicos + 15 Gerais + 40 Específicos)',
+    category: 'oficial_70',
+    badge: 'Inédito Top 10 • 70q / 100 pts',
+    badgeColor: 'purple',
+    durationMinutes: 240,
+    totalPoints: 100,
+    minPassPoints: 50,
+    discursiva: null,
+    description: 'Simulado completo sem repetição em relação ao #05, reforçando pegadinhas clássicas de RLM, Informática (Win 11/LGPD), Legislação Cuiabana e Conhecimentos Específicos.',
+    questions: QUESTIONS_SIMULADO_06
+  },
+  {
+    id: 'sim_top10_esp_hard',
+    code: 'DESAFIO TOP 10 ESPECÍFICOS',
+    title: 'Maratona Nível Top 10: Conhecimentos Específicos Peso 1,75 (60 Questões)',
+    subtitle: '60 questões inéditas de alta complexidade (Itens 1 a 12 do Edital CMC 2026)',
+    category: 'tatico',
+    badge: 'Peso 1,75 • 60q / 105 pts',
+    badgeColor: 'amber',
+    durationMinutes: 180,
+    totalPoints: TOP10_ESP_HARD_PTS,
+    minPassPoints: Number((TOP10_ESP_HARD_PTS * 0.5).toFixed(2)),
+    discursiva: null,
+    description: 'Caderno intensivo desenhado especificamente para buscar pontuação de corte entre os 10 primeiros colocados nos Conhecimentos Específicos (peso 1,75).',
+    questions: QUESTIONS_TOP10_ESP_HARD
   }
 ];
 
